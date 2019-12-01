@@ -7,7 +7,6 @@ import tensorflow as tf
 import tensorflow_probability as tfb
 import tensorflow.keras as tfk
 import tensorflow.keras.layers as tfkl
-import tensorflow.keras.backend as tfkb
 
 import cv2
 
@@ -108,13 +107,15 @@ class OpenPoseV2:
                  weights_path,
                  config_path,
                  input_shape=(512, 512),
-                 gaussian_filtering=True):
+                 gaussian_filtering=True,
+                 preserve_aspect_ratio=False):
         self.openpose_model = FastOpenPoseV2Model(weights_path,
                                                   config_path,
                                                   input_shape,
                                                   gaussian_filtering)
+        self.preserve_aspect_ratio = preserve_aspect_ratio
         self.model = self.openpose_model.load_model()
-        # self.fe = FeatureExtractor()
+        self.fe = FeatureExtractor()
         self.n_joints = len(OpenPoseV2.kp_mapper) - 1
         self.n_limbs = len(OpenPoseV2.connections)
         self.drawing_stick = 15
@@ -122,7 +123,12 @@ class OpenPoseV2:
     def draw_pose(self, img):
         org_h, org_w, _ = img.shape
 
-        resized = tf.image.resize_with_pad(img, self.openpose_model.input_h, self.openpose_model.input_w).numpy()
+        if self.preserve_aspect_ratio:
+            resized = tf.image.resize_with_pad(img, self.openpose_model.input_h, self.openpose_model.input_w).numpy()
+        else:
+            resized = cv2.resize(img,
+                                 (self.openpose_model.input_w, self.openpose_model.input_h),
+                                 interpolation=cv2.INTER_CUBIC)
         t = time()
         peaks, subset, candidate = self._inference(resized)
         print('complete inference: ', time() - t)
@@ -130,21 +136,59 @@ class OpenPoseV2:
         if not subset.any():
             return img
         else:
-            transformed_candidate = self.inverse_transform_kps(org_h, org_w,
-                                                               self.openpose_model.input_h,
-                                                               self.openpose_model.input_w,
-                                                               candidate)
+            transformed_candidate = self.inverse_transform_kps(org_h, org_w, candidate)
 
         drawed = img.copy()
-
         for i, person in enumerate(subset):
-            t = time()
-            kps = self._extract_keypoints(person, transformed_candidate)
-            print('KP extraction: ', time() - t)
+            kps, overall_conf = self._extract_keypoints(person, transformed_candidate)
+            x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
+            pose_features = self.fe.generate_features(keypoints=kps)
+            bb = BoundingBox(x_min, x_max, y_min, y_max)
+            p = Person(kps, overall_conf, bb, pose_features)
 
+            # Draw bbox
+            cv2.rectangle(drawed, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2, 5)
+
+            # Add confidence score
+            cv2.putText(drawed,
+                        str(overall_conf),
+                        (x_min + (x_max - x_min) // 3, y_min - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 255, 0),
+                        2)
+
+            # Draw pose landmarks
             self._draw_kps(drawed, kps)
+
+            # Draw limbs
             drawed = self._draw_connections(drawed, person, transformed_candidate)
         return drawed
+
+    def _get_bbox(self, kps, org_w, org_h):
+        x_min, y_min, x_max, y_max = self._get_ul_lr(kps)
+        diag = np.sqrt((x_min - x_max) ** 2 + (y_min - y_max) ** 2)
+        pad = diag // 10
+
+        x_min = int(max(0, x_min - pad))
+        y_min = int(max(0, y_min - pad))
+        x_max = int(min(org_w, x_max + pad))
+        y_max = int(min(org_h, y_max + pad))
+        return x_min, x_max, y_min, y_max
+
+    @staticmethod
+    def _get_ul_lr(kps):
+        not_none_kps = np.array([kp for kp in kps if kp is not None])
+
+        x_max_ind, y_max_ind = np.argmax(not_none_kps, axis=0)
+        x_max = not_none_kps[x_max_ind, 0]
+        y_max = not_none_kps[y_max_ind, 1]
+
+        x_min_ind, y_min_ind = np.argmin(not_none_kps, axis=0)
+        x_min = not_none_kps[x_min_ind, 0]
+        y_min = not_none_kps[y_min_ind, 1]
+
+        return x_min, y_min, x_max, y_max
 
     def _draw_kps(self, img, kps):
         for i, kp in enumerate(kps):
@@ -172,36 +216,43 @@ class OpenPoseV2:
             img = cv2.addWeighted(img, 0.4, cur_canvas, 0.6, 0)
         return img
 
-    @staticmethod
-    def inverse_transform_kps(org_h, org_w, h, w, candidate):
-        kps = candidate[:, 0: 2].astype(np.int)
-        scale_factor = np.max([org_h, org_w]) / h
-        transformed_candidate = np.zeros((candidate.shape[0], 3))
-        if org_h > org_w:
-            resized_w = org_w / scale_factor
-            border = (w - resized_w) / 2
-            for i, kp in enumerate(kps):
-                transformed_candidate[i, 0] = scale_factor * (kp[0] - border)
-                transformed_candidate[i, 1] = scale_factor * kp[1]
-                transformed_candidate[i, 2] = candidate[i, 2]
+    def inverse_transform_kps(self, org_h, org_w, candidate):
+        if not self.preserve_aspect_ratio:
+            scale_x = org_w / self.openpose_model.input_w
+            scale_y = org_h / self.openpose_model.input_h
+
+            transformed_candidate = np.round(candidate[:, 0: 3] * [scale_x, scale_y, 1])
         else:
-            resized_h = org_h / scale_factor
-            border = (h - resized_h) / 2
-            for i, kp in enumerate(kps):
-                transformed_candidate[i, 0] = scale_factor * kp[0]
-                transformed_candidate[i, 1] = scale_factor * (kp[1] - border)
-                transformed_candidate[i, 2] = candidate[i, 2]
+            kps = candidate[:, 0: 2].astype(np.int)
+            scale_factor = np.max([org_h, org_w]) / self.openpose_model.input_h
+            transformed_candidate = np.zeros((candidate.shape[0], 3))
+            if org_h > org_w:
+                resized_w = org_w / scale_factor
+                border = (self.openpose_model.input_w - resized_w) / 2
+                for i, kp in enumerate(kps):
+                    transformed_candidate[i, 0] = scale_factor * (kp[0] - border)
+                    transformed_candidate[i, 1] = scale_factor * kp[1]
+                    transformed_candidate[i, 2] = candidate[i, 2]
+            else:
+                resized_h = org_h / scale_factor
+                border = (self.openpose_model.input_h - resized_h) / 2
+                for i, kp in enumerate(kps):
+                    transformed_candidate[i, 0] = scale_factor * kp[0]
+                    transformed_candidate[i, 1] = scale_factor * (kp[1] - border)
+                    transformed_candidate[i, 2] = candidate[i, 2]
         return transformed_candidate
 
     def _extract_keypoints(self, person_subset, candidate_arr):
         kps = list()
+        joint_confidences = list()
         for i in range(self.n_joints):
             kp_ind = person_subset[i].astype(np.int)
             if kp_ind == -1:
                 kps.append(None)
             else:
                 kps.append(candidate_arr[kp_ind, 0: 2].astype(np.int))
-        return kps
+                joint_confidences.append(candidate_arr[kp_ind, 2])
+        return kps, np.mean(joint_confidences)
 
     def _inference(self, img):
         """Img must be of shape (self.box_size // 2, self.box_size // 2), i.e. (184, 184)."""
@@ -258,19 +309,6 @@ class OpenPoseV2:
 
                         points_y_pos = np.round(np.linspace(cand_a[i][0], cand_b[j][0], num=mid_num)).astype(np.int)
                         points_x_pos = np.round(np.linspace(cand_a[i][1], cand_b[j][1], num=mid_num)).astype(np.int)
-
-                        # mid_points_vector = score_mid[points_x_pos, points_y_pos]
-                        # mid_points_score = np.sum(mid_points_vector * vec, axis=0)
-                        # score_with_dist_prior = mid_points_score.mean() + min(self.openpose_model.input_h / 2 / norm, 0)
-                        #
-                        # criterion1 = len(np.nonzero(mid_points_score > self.openpose_model.thre2)[0]) > 0.8 * len(
-                        #     mid_points_score)
-                        # criterion2 = score_with_dist_prior > 0
-                        # if criterion1 and criterion2:
-                        #     connection_candidate.append([i,
-                        #                                  j,
-                        #                                  score_with_dist_prior,
-                        #                                  score_with_dist_prior + cand_a[i][2] + cand_b[j][2]])
 
                         vec_x = score_mid[points_x_pos, points_y_pos, 0]
                         vec_y = score_mid[points_x_pos, points_y_pos, 1]
@@ -604,4 +642,67 @@ class OpenPoseModelV2:
         return x
 
 
+class BoundingBox:
 
+    def __init__(self, x_min, x_max, y_min, y_max):
+        self.x_left = x_min
+        self.y_up = y_min
+        self.width = x_max - x_min
+        self.height = y_max - y_min
+
+
+class Person:
+
+    def __init__(self, keypoints, confidence, bbox, pose_features):
+        self.keypoints = keypoints
+        self.confidence = confidence
+        self.bbox = bbox
+        self.pose_features = pose_features
+
+
+class FeatureExtractor:
+
+    """Based on COCO keypoints, this feature extractor extracts features from extracted body keypoints."""
+
+    def __init__(self):
+        self.points_comb = np.array([[4, 3, 2],
+                                     [3, 2, 1],
+                                     [1, 5, 6],
+                                     [5, 6, 7],
+                                     [2, 1, 0],
+                                     [2, 1, 8],
+                                     [1, 8, 9],
+                                     [1, 8, 12],
+                                     [8, 9, 10],
+                                     [9, 10, 11],
+                                     [10, 11, 22],
+                                     [8, 12, 13],
+                                     [12, 13, 14],
+                                     [13, 14, 19]])
+
+    def generate_features(self, keypoints):
+        features = list()
+        for comb in self.points_comb:
+            feature = None
+
+            a = keypoints[comb[0]]
+            b = keypoints[comb[1]]
+            c = keypoints[comb[2]]
+
+            if (a is not None) and (b is not None) and (c is not None):
+                feature = self._compute_angle(np.array(a),
+                                              np.array(b),
+                                              np.array(c))
+            features.append(feature)
+        return np.array(features)
+
+    @staticmethod
+    def _compute_angle(a, b, c):
+        """Computes angle on point 'b'."""
+        ba = a - b
+        bc = c - b
+
+        cosine_angle = np.dot(ba, bc) / ((np.linalg.norm(ba) * np.linalg.norm(bc)) + 0.0001)
+        angle = np.arccos(cosine_angle)
+        angle = np.degrees(angle)
+        return angle
