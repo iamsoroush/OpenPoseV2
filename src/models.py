@@ -13,6 +13,12 @@ import cv2
 
 class OpenPoseV2:
 
+    """OpenPose body_25 version.
+
+    Given a RGB(0, 255) image, model resizes it to self.input_res, and makes inference on that.
+    Note that the resize function is based on tensorflow's resize_and_pad with pad values of self.pad_value.
+    """
+
     kp_names = ["Nose",
                 "Neck",
                 "RShoulder",
@@ -104,35 +110,35 @@ class OpenPoseV2:
               [170, 170, 170]]
 
     def __init__(self,
-                 weights_path,
-                 config_path,
-                 input_shape=(512, 512),
-                 gaussian_filtering=True,
-                 preserve_aspect_ratio=False):
-        self.openpose_model = FastOpenPoseV2Model(weights_path,
-                                                  config_path,
-                                                  input_shape,
-                                                  gaussian_filtering)
-        self.preserve_aspect_ratio = preserve_aspect_ratio
+                 model_config,
+                 hyper_config):
+        self.openpose_model = FastOpenPoseV2Model(model_config)
         self.model = self.openpose_model.load_model()
         self.fe = FeatureExtractor()
         self.n_joints = len(OpenPoseV2.kp_mapper) - 1
         self.n_limbs = len(OpenPoseV2.connections)
         self.drawing_stick = 15
 
-    def draw_pose(self, img):
-        org_h, org_w, _ = img.shape
+        self.use_gpu = hyper_config.use_gpu
+        self.gpu_device_number = hyper_config.gpu_device_number
+        self.scale_search = hyper_config.scale_search
+        self.pad_value = hyper_config.pad_value
 
-        if self.preserve_aspect_ratio:
-            resized = tf.image.resize_with_pad(img, self.openpose_model.input_h, self.openpose_model.input_w).numpy()
-        else:
-            resized = cv2.resize(img,
-                                 (self.openpose_model.input_w, self.openpose_model.input_h),
-                                 interpolation=cv2.INTER_CUBIC)
+    def draw_pose(self, img):
+
+        # resized = tf.image.resize_with_pad(img,
+        #                                    self.openpose_model.input_res,
+        #                                    self.openpose_model.input_res)
+
+        # resized = cv2.resize(img,
+        #                      (self.openpose_model.input_w, self.openpose_model.input_h),
+        #                      interpolation=cv2.INTER_CUBIC)
+        resized = self._resize_with_pad(img, self.openpose_model.input_res, self.pad_value)
         t = time()
         peaks, subset, candidate = self._inference(resized)
         print('complete inference: ', time() - t)
 
+        org_h, org_w, _ = img.shape
         if not subset.any():
             return img
         else:
@@ -164,6 +170,23 @@ class OpenPoseV2:
             # Draw limbs
             drawed = self._draw_connections(drawed, person, transformed_candidate)
         return drawed
+
+    @staticmethod
+    def _resize_with_pad(img, target_res, pad_value):
+        org_res = np.array(img.shape[:2])
+        ratio = float(target_res) / max(org_res)
+        new_size = (org_res * ratio).astype(int)
+
+        resized = cv2.resize(img, (new_size[1], new_size[0]))
+
+        delta_w = target_res - new_size[1]
+        delta_h = target_res - new_size[0]
+        top, bottom = delta_h // 2, delta_h - (delta_h // 2)
+        left, right = delta_w // 2, delta_w - (delta_w // 2)
+
+        resized_padded = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT,
+                                            value=pad_value)
+        return resized_padded
 
     def _get_bbox(self, kps, org_w, org_h):
         x_min, y_min, x_max, y_max = self._get_ul_lr(kps)
@@ -255,7 +278,7 @@ class OpenPoseV2:
         return kps, np.mean(joint_confidences)
 
     def _inference(self, img):
-        """Img must be of shape (self.box_size // 2, self.box_size // 2), i.e. (184, 184)."""
+        """Img must be of shape (self.openpose_model.input_res, self.openpose_model.input_res)."""
 
         paf, masked_heatmap = self.model.predict(np.expand_dims(img, axis=0))
         all_peaks = self._get_peaks(masked_heatmap)
@@ -315,8 +338,8 @@ class OpenPoseV2:
 
                         score_mid_pts = np.multiply(vec_x, vec[0]) + np.multiply(vec_y, vec[1])
                         score_with_dist_prior = sum(score_mid_pts) / len(score_mid_pts) + min(
-                            0.5 * self.openpose_model.input_h / norm - 1, 0)
-                        criterion1 = len(np.nonzero(score_mid_pts > self.openpose_model.thre2)[0]) > 0.8 * len(
+                            0.5 * self.openpose_model.input_res / norm - 1, 0)
+                        criterion1 = len(np.nonzero(score_mid_pts > self.openpose_model.connection_threshold)[0]) > 0.8 * len(
                             score_mid_pts)
                         criterion2 = score_with_dist_prior > 0
                         if criterion1 and criterion2:
@@ -405,66 +428,37 @@ class FastOpenPoseV2Model:
 
     Key-point extraction implemented as graph definitions
 
-    Note: pass the image in shape=input_shape as RGB(0, 255)
+    Note: pass the image in shape=input_res as RGB(0, 255)
     """
 
     def __init__(self,
-                 weights_path,
-                 config_path,
-                 input_shape,
-                 gaussian_filtering):
-        self.weights_path = weights_path
-        self.config_path = config_path
-        self.params, self.model_params = self._read_config()
-        self.stride = self.model_params['stride']
-        self.pad_value = self.model_params['padValue']
-        self.box_size = self.model_params['boxsize']
-        self.input_h, self.input_w = input_shape
-        self.thre1 = self.params['thre1']
-        self.thre2 = self.params['thre2']
-        self.model = None
-        self.gaussian_filtering = gaussian_filtering
+                 config):
+        self.weights_path = config.weights_path
+        self.config_path = config.config_path
+        self.input_res = config.input_res
+        self.use_gaussian_filtering = config.use_gaussian_filtering
+        self.gaussian_kernel_sigma = config.gaussian_kernel_sigma
+        self.resize_method = config.resize_method
+        self.joint_threshold = config.joint_threshold
+        self.connection_threshold = config.connection_threshold
 
     def load_model(self):
-        self.model = self._create_model()
+        model = self._create_model()
         print('Model loaded successfully')
-        return self.model
-
-    def _read_config(self):
-        config = ConfigObj(self.config_path)
-        param = config['param']
-        model_id = param['modelID']
-        model = config['models'][model_id]
-        model['boxsize'] = int(model['boxsize'])
-        model['stride'] = int(model['stride'])
-        model['padValue'] = int(model['padValue'])
-        param['octave'] = int(param['octave'])
-        param['use_gpu'] = int(param['use_gpu'])
-        param['starting_range'] = float(param['starting_range'])
-        param['ending_range'] = float(param['ending_range'])
-        param['scale_search'] = list(map(float, param['scale_search']))
-        param['thre1'] = float(param['thre1'])
-        param['thre2'] = float(param['thre2'])
-        param['thre3'] = float(param['thre3'])
-        param['mid_num'] = int(param['mid_num'])
-        param['min_num'] = int(param['min_num'])
-        param['crop_ratio'] = float(param['crop_ratio'])
-        param['bbox_ratio'] = float(param['bbox_ratio'])
-        param['GPUdeviceNumber'] = int(param['GPUdeviceNumber'])
-        return param, model
+        return model
 
     def _create_model(self):
         openpose_model = OpenPoseModelV2()
         openpose_raw = openpose_model.create_model()
         openpose_raw.load_weights(self.weights_path)
 
-        input_tensor = tfkl.Input(shape=(self.input_h, self.input_w, 3))
+        input_tensor = tfkl.Input(shape=(self.input_res, self.input_res, 3))
         x = openpose_raw(input_tensor)
-        hm = tf.image.resize(x[0], (self.input_h, self.input_w), 'bicubic')
-        paf = tf.image.resize(x[1], (self.input_h, self.input_w), 'bicubic')
+        hm = tf.image.resize(x[0], (self.input_res, self.input_res), self.resize_method)
+        paf = tf.image.resize(x[1], (self.input_res, self.input_res), self.resize_method)
 
         if self.gaussian_filtering:
-            gaussian_kernel = self._get_gaussian_kernel()
+            gaussian_kernel = self._get_gaussian_kernel(self.gaussian_kernel_sigma)
             depth_wise_gaussian_kernel = tf.expand_dims(
                 tf.transpose(tf.keras.backend.repeat(gaussian_kernel, openpose_model.np_cm), perm=(0, 2, 1)), axis=-1)
             hm = tf.nn.depthwise_conv2d(hm,
@@ -475,12 +469,16 @@ class FastOpenPoseV2Model:
         paddings = tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]])
         padded = tf.pad(hm, paddings)
 
-        slice1 = tf.slice(padded, [0, 0, 1, 0], [-1, self.input_h, self.input_w, -1])
-        slice2 = tf.slice(padded, [0, 2, 1, 0], [-1, self.input_h, self.input_w, -1])
-        slice3 = tf.slice(padded, [0, 1, 0, 0], [-1, self.input_h, self.input_w, -1])
-        slice4 = tf.slice(padded, [0, 1, 2, 0], [-1, self.input_h, self.input_w, -1])
+        slice1 = tf.slice(padded, [0, 0, 1, 0], [-1, self.input_res, self.input_res, -1])
+        slice2 = tf.slice(padded, [0, 2, 1, 0], [-1, self.input_res, self.input_res, -1])
+        slice3 = tf.slice(padded, [0, 1, 0, 0], [-1, self.input_res, self.input_res, -1])
+        slice4 = tf.slice(padded, [0, 1, 2, 0], [-1, self.input_res, self.input_res, -1])
 
-        stacked = tf.stack([hm >= slice1, hm >= slice2, hm >= slice3, hm >= slice4, hm >= self.thre1], axis=-1)
+        stacked = tf.stack([hm >= slice1,
+                            hm >= slice2,
+                            hm >= slice3,
+                            hm >= slice4,
+                            hm >= self.joint_threshold], axis=-1)
         binary_hm = tf.reduce_all(stacked, axis=-1)
 
         masked_hm = tf.multiply(tf.cast(binary_hm, tf.float32), hm)
@@ -489,7 +487,8 @@ class FastOpenPoseV2Model:
         return model
 
     @staticmethod
-    def _get_gaussian_kernel(mean=0, sigma=3):
+    def _get_gaussian_kernel(sigma=3):
+        mean = 0
         size = sigma * 3
         d = tfb.distributions.Normal(mean, sigma)
         vals = d.prob(tf.range(start=-size, limit=size + 1, dtype=tf.float32))
