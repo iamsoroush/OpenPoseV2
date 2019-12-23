@@ -1,5 +1,6 @@
-from configobj import ConfigObj
+# from configobj import ConfigObj
 from time import time
+import os
 
 import numpy as np
 
@@ -10,6 +11,9 @@ import tensorflow.keras.layers as tfkl
 
 import cv2
 
+from .utils import FeatureExtractor, Person, BoundingBox
+from .config import FeatureExtractorConfig
+
 
 class OpenPoseV2:
 
@@ -19,104 +23,16 @@ class OpenPoseV2:
     Note that the resize function is based on tensorflow's resize_and_pad with pad values of self.pad_value.
     """
 
-    kp_names = ["Nose",
-                "Neck",
-                "RShoulder",
-                "RElbow",
-                "RWrist",
-                "LShoulder",
-                "LElbow",
-                "LWrist",
-                "MidHip",
-                "RHip",
-                "RKnee",
-                "RAnkle",
-                "LHip",
-                "LKnee",
-                "LAnkle",
-                "REye",
-                "LEye",
-                "REar",
-                "LEar",
-                "LBigToe",
-                "LSmallToe",
-                "LHeel",
-                "RBigToe",
-                "RSmallToe",
-                "RHeel",
-                "Background"]
-    kp_mapper = dict(zip(range(len(kp_names)), kp_names))
-    connections = [[1, 8],
-                   [1, 2],
-                   [1, 5],
-                   [2, 3],
-                   [3, 4],
-                   [5, 6],
-                   [6, 7],
-                   [8, 9],
-                   [9, 10],
-                   [10, 11],
-                   [8, 12],
-                   [12, 13],
-                   [13, 14],
-                   [1, 0],
-                   [0, 15],
-                   [15, 17],
-                   [0, 16],
-                   [16, 18],
-                   # [2, 17],
-                   # [5, 18],
-                   [14, 19],
-                   [19, 20],
-                   [14, 21],
-                   [11, 22],
-                   [22, 23],
-                   [11, 24]]
-    map_paf_to_connections = [[0, 1],
-                              [14, 15],
-                              [22, 23],
-                              [16, 17],
-                              [18, 19],
-                              [24, 25],
-                              [26, 27],
-                              [6, 7],
-                              [2, 3],
-                              [4, 5],
-                              [8, 9],
-                              [10, 11],
-                              [12, 13],
-                              [30, 31],
-                              [32, 33],
-                              [36, 37],
-                              [34, 35],
-                              [38, 39],
-                              # [20, 21],
-                              # [28, 29],
-                              [40, 41],
-                              [42, 43],
-                              [44, 45],
-                              [46, 47],
-                              [48, 49],
-                              [50, 51]]
-
-    colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0],
-              [255, 255, 0], [170, 255, 0], [85, 255, 0],
-              [0, 255, 0], [0, 255, 85], [0, 255, 170],
-              [0, 255, 255], [0, 170, 255], [0, 85, 255],
-              [0, 0, 255], [85, 0, 255], [170, 0, 255],
-              [255, 0, 255], [255, 0, 170], [255, 0, 85],
-              [255, 170, 85], [255, 170, 170], [255, 170, 255],
-              [255, 85, 85], [255, 85, 170], [255, 85, 255],
-              [170, 170, 170]]
-
     def __init__(self,
                  model_config,
                  hyper_config):
+        self.hyper_config = hyper_config
         self.openpose_model = FastOpenPoseV2Model(model_config)
-        self.model = self.openpose_model.load_model()
-        self.fe = FeatureExtractor()
-        self.n_joints = len(OpenPoseV2.kp_mapper) - 1
-        self.n_limbs = len(OpenPoseV2.connections)
+        self.model = self.openpose_model.get_model()
+        fe_config = FeatureExtractorConfig()
+        self.fe = FeatureExtractor(fe_config)
+        self.n_joints = len(hyper_config.kp_mapper) - 1
+        self.n_limbs = len(hyper_config.connections)
         self.drawing_stick = 15
 
         self.use_gpu = hyper_config.use_gpu
@@ -145,12 +61,14 @@ class OpenPoseV2:
             transformed_candidate = self.inverse_transform_kps(org_h, org_w, candidate)
 
         drawed = img.copy()
+        persons = list()
         for i, person in enumerate(subset):
             kps, overall_conf = self._extract_keypoints(person, transformed_candidate)
             x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
             pose_features = self.fe.generate_features(keypoints=kps)
             bb = BoundingBox(x_min, x_max, y_min, y_max)
             p = Person(kps, overall_conf, bb, pose_features)
+            persons.append(p)
 
             # Draw bbox
             cv2.rectangle(drawed, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2, 5)
@@ -169,7 +87,7 @@ class OpenPoseV2:
 
             # Draw limbs
             drawed = self._draw_connections(drawed, person, transformed_candidate)
-        return drawed
+        return drawed, persons
 
     @staticmethod
     def _resize_with_pad(img, target_res, pad_value):
@@ -185,7 +103,7 @@ class OpenPoseV2:
         left, right = delta_w // 2, delta_w - (delta_w // 2)
 
         resized_padded = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT,
-                                            value=pad_value)
+                                            value=(pad_value, pad_value, pad_value))
         return resized_padded
 
     def _get_bbox(self, kps, org_w, org_h):
@@ -216,11 +134,11 @@ class OpenPoseV2:
     def _draw_kps(self, img, kps):
         for i, kp in enumerate(kps):
             if kp is not None:
-                cv2.circle(img, (int(kp[0]), int(kp[1])), self.drawing_stick, OpenPoseV2.colors[i], thickness=-1)
+                cv2.circle(img, (int(kp[0]), int(kp[1])), self.drawing_stick, self.hyper_config.colors[i], thickness=-1)
 
     def _draw_connections(self, img, person, transformed_candidate):
         for i in range(self.n_limbs):
-            index = person[np.array(OpenPoseV2.connections[i])]
+            index = person[np.array(self.hyper_config.connections[i])]
             if -1 in index:
                 continue
             cur_canvas = img.copy()
@@ -235,34 +153,28 @@ class OpenPoseV2:
                                        int(angle),
                                        0,
                                        360, 1)
-            cv2.fillConvexPoly(cur_canvas, polygon, OpenPoseV2.colors[i])
+            cv2.fillConvexPoly(cur_canvas, polygon, self.hyper_config.colors[i])
             img = cv2.addWeighted(img, 0.4, cur_canvas, 0.6, 0)
         return img
 
     def inverse_transform_kps(self, org_h, org_w, candidate):
-        if not self.preserve_aspect_ratio:
-            scale_x = org_w / self.openpose_model.input_w
-            scale_y = org_h / self.openpose_model.input_h
-
-            transformed_candidate = np.round(candidate[:, 0: 3] * [scale_x, scale_y, 1])
+        kps = candidate[:, 0: 2].astype(np.int)
+        scale_factor = np.max([org_h, org_w]) / self.openpose_model.input_res
+        transformed_candidate = np.zeros((candidate.shape[0], 3))
+        if org_h > org_w:
+            resized_w = org_w / scale_factor
+            border = (self.openpose_model.input_res - resized_w) / 2
+            for i, kp in enumerate(kps):
+                transformed_candidate[i, 0] = scale_factor * (kp[0] - border)
+                transformed_candidate[i, 1] = scale_factor * kp[1]
+                transformed_candidate[i, 2] = candidate[i, 2]
         else:
-            kps = candidate[:, 0: 2].astype(np.int)
-            scale_factor = np.max([org_h, org_w]) / self.openpose_model.input_h
-            transformed_candidate = np.zeros((candidate.shape[0], 3))
-            if org_h > org_w:
-                resized_w = org_w / scale_factor
-                border = (self.openpose_model.input_w - resized_w) / 2
-                for i, kp in enumerate(kps):
-                    transformed_candidate[i, 0] = scale_factor * (kp[0] - border)
-                    transformed_candidate[i, 1] = scale_factor * kp[1]
-                    transformed_candidate[i, 2] = candidate[i, 2]
-            else:
-                resized_h = org_h / scale_factor
-                border = (self.openpose_model.input_h - resized_h) / 2
-                for i, kp in enumerate(kps):
-                    transformed_candidate[i, 0] = scale_factor * kp[0]
-                    transformed_candidate[i, 1] = scale_factor * (kp[1] - border)
-                    transformed_candidate[i, 2] = candidate[i, 2]
+            resized_h = org_h / scale_factor
+            border = (self.openpose_model.input_res - resized_h) / 2
+            for i, kp in enumerate(kps):
+                transformed_candidate[i, 0] = scale_factor * kp[0]
+                transformed_candidate[i, 1] = scale_factor * (kp[1] - border)
+                transformed_candidate[i, 2] = candidate[i, 2]
         return transformed_candidate
 
     def _extract_keypoints(self, person_subset, candidate_arr):
@@ -313,10 +225,10 @@ class OpenPoseV2:
         special_k = []
         mid_num = 10
 
-        for k in range(len(OpenPoseV2.map_paf_to_connections)):
-            score_mid = paf[:, :, OpenPoseV2.map_paf_to_connections[k]]
-            cand_a = all_peaks[OpenPoseV2.connections[k][0]]
-            cand_b = all_peaks[OpenPoseV2.connections[k][1]]
+        for k in range(len(self.hyper_config.map_paf_to_connections)):
+            score_mid = paf[:, :, self.hyper_config.map_paf_to_connections[k]]
+            cand_a = all_peaks[self.hyper_config.connections[k][0]]
+            cand_b = all_peaks[self.hyper_config.connections[k][1]]
             n_a = len(cand_a)
             n_b = len(cand_b)
             if n_a != 0 and n_b != 0:
@@ -370,11 +282,11 @@ class OpenPoseV2:
         subset = -1 * np.ones((0, self.n_joints + 3))
         candidate = np.array([item for sublist in all_peaks for item in sublist])
 
-        for k in range(len(OpenPoseV2.map_paf_to_connections)):
+        for k in range(len(self.hyper_config.map_paf_to_connections)):
             if k not in special_k:
                 part_as = connection_all[k][:, 0]
                 part_bs = connection_all[k][:, 1]
-                index_a, index_b = np.array(OpenPoseV2.connections[k])
+                index_a, index_b = np.array(self.hyper_config.connections[k])
 
                 for i in range(len(connection_all[k])):  # = 1:size(temp,1)
                     found = 0
@@ -434,7 +346,6 @@ class FastOpenPoseV2Model:
     def __init__(self,
                  config):
         self.weights_path = config.weights_path
-        self.config_path = config.config_path
         self.input_res = config.input_res
         self.use_gaussian_filtering = config.use_gaussian_filtering
         self.gaussian_kernel_sigma = config.gaussian_kernel_sigma
@@ -442,22 +353,20 @@ class FastOpenPoseV2Model:
         self.joint_threshold = config.joint_threshold
         self.connection_threshold = config.connection_threshold
 
-    def load_model(self):
+    def get_model(self):
         model = self._create_model()
         print('Model loaded successfully')
         return model
 
     def _create_model(self):
-        openpose_model = OpenPoseModelV2()
+        openpose_model = OpenPoseModelV2(resize_method=self.resize_method)
         openpose_raw = openpose_model.create_model()
         openpose_raw.load_weights(self.weights_path)
 
         input_tensor = tfkl.Input(shape=(self.input_res, self.input_res, 3))
-        x = openpose_raw(input_tensor)
-        hm = tf.image.resize(x[0], (self.input_res, self.input_res), self.resize_method)
-        paf = tf.image.resize(x[1], (self.input_res, self.input_res), self.resize_method)
+        hm, paf = openpose_raw(input_tensor)
 
-        if self.gaussian_filtering:
+        if self.use_gaussian_filtering:
             gaussian_kernel = self._get_gaussian_kernel(self.gaussian_kernel_sigma)
             depth_wise_gaussian_kernel = tf.expand_dims(
                 tf.transpose(tf.keras.backend.repeat(gaussian_kernel, openpose_model.np_cm), perm=(0, 2, 1)), axis=-1)
@@ -481,7 +390,7 @@ class FastOpenPoseV2Model:
                             hm >= self.joint_threshold], axis=-1)
         binary_hm = tf.reduce_all(stacked, axis=-1)
 
-        masked_hm = tf.multiply(tf.cast(binary_hm, tf.float32), hm)
+        masked_hm = tf.multiply(tf.cast(binary_hm, 'float'), hm)
 
         model = tfk.Model(input_tensor, [paf, masked_hm])
         return model
@@ -503,7 +412,9 @@ class OpenPoseModelV2:
                  paf_stages=4,
                  cm_stages=2,
                  np_paf=52,
-                 np_cm=26):
+                 np_cm=26,
+                 resize_method='bicubic',
+                 return_vgg=False):
         """OpenPose model definition proposed in arXiv:1812.08008v2
 
         :param input_shape: (height, width, n_channels)
@@ -520,9 +431,12 @@ class OpenPoseModelV2:
         self.cm_stages = cm_stages
         self.np_paf = np_paf
         self.np_cm = np_cm
+        self.resize_method = resize_method
+        self.return_vgg = return_vgg
 
     def create_model(self):
-        input_tensor = tfkl.Input(self.input_shape)  # Input must be RGB and (0, 255
+        input_tensor = tfkl.Input(self.input_shape)  # Input must be RGB and (0, 255)
+        dynamic_input_res = tf.shape(input_tensor)[1:3]
         normalized_input = tfkl.Lambda(lambda x: x / 256 - 0.5)(input_tensor)  # [-0.5, 0.5]
 
         # VGG
@@ -540,10 +454,17 @@ class OpenPoseModelV2:
         cm_out = self._cm_block(cm_input, 0, 96, 256)
 
         for cm_stage in range(1, self.cm_stages):
-            concat = tfkl.Concatenate(axis=-1, name='concat_stage{}_L1'.format(cm_stage))([initial_features, cm_out, paf_out])
+            concat = tfkl.Concatenate(axis=-1, name='concat_stage{}_L1'.format(cm_stage))(
+                [initial_features, cm_out, paf_out])
             cm_out = self._cm_block(concat, cm_stage, 128, 512)
 
-        model = tfk.Model(input_tensor, [cm_out, paf_out])
+        cm_out = tf.image.resize(cm_out, dynamic_input_res, self.resize_method)
+        paf_out = tf.image.resize(paf_out, dynamic_input_res, self.resize_method)
+        if self.return_vgg:
+            vgg_resized = tf.image.resize(initial_features, dynamic_input_res, self.resize_method)
+            model = tfk.Model(input_tensor, [cm_out, paf_out, vgg_resized])
+        else:
+            model = tfk.Model(input_tensor, [cm_out, paf_out])
         return model
 
     def _paf_block(self, x, stage, n_kernels, n_pw_kernels):
@@ -641,67 +562,63 @@ class OpenPoseModelV2:
         return x
 
 
-class BoundingBox:
+class KerasModel:
 
-    def __init__(self, x_min, x_max, y_min, y_max):
-        self.x_left = x_min
-        self.y_up = y_min
-        self.width = x_max - x_min
-        self.height = y_max - y_min
+    def __init__(self,
+                 model_name,
+                 models_dir,
+                 logs_dir):
+        self.model_name = model_name
+
+        self.models_dir = models_dir
+        if not os.path.exists(models_dir):
+            os.mkdir(models_dir)
+
+        self.model_dir = os.path.join(models_dir, model_name)
+        if not os.path.exists(self.model_dir):
+            os.mkdir(self.model_dir)
+
+        self.logs_dir = logs_dir
+        if not os.path.exists(self.logs_dir):
+            os.mkdir(self.logs_dir)
+
+        self.model_log_dir = os.path.join(logs_dir, model_name)
+        if not os.path.exists(self.model_log_dir):
+            os.mkdir(self.model_log_dir)
 
 
-class Person:
+class PersonReIDBranch(KerasModel):
 
-    def __init__(self, keypoints, confidence, bbox, pose_features):
-        self.keypoints = keypoints
-        self.confidence = confidence
-        self.bbox = bbox
-        self.pose_features = pose_features
+    def __init__(self,
+                 model_name,
+                 models_dir,
+                 logs_dir,
+                 vgg_base_path):
 
+        """:arg vgg_base_path: path to pre-trained vgg's .h5 file"""
 
-class FeatureExtractor:
+        super(PersonReIDBranch, self).__init__(model_name, models_dir, logs_dir)
+        self.vgg_base_path = vgg_base_path
 
-    """Based on COCO keypoints, this feature extractor extracts features from extracted body keypoints."""
+    def get_model(self):
+        vgg_base = tfk.models.load_model(self.vgg_base_path)
+        vgg_base.trainable = False
+        prid_head = self._create_head()
 
-    def __init__(self):
-        self.points_comb = np.array([[4, 3, 2],
-                                     [3, 2, 1],
-                                     [1, 5, 6],
-                                     [5, 6, 7],
-                                     [2, 1, 0],
-                                     [2, 1, 8],
-                                     [1, 8, 9],
-                                     [1, 8, 12],
-                                     [8, 9, 10],
-                                     [9, 10, 11],
-                                     [10, 11, 22],
-                                     [8, 12, 13],
-                                     [12, 13, 14],
-                                     [13, 14, 19]])
-
-    def generate_features(self, keypoints):
-        features = list()
-        for comb in self.points_comb:
-            feature = None
-
-            a = keypoints[comb[0]]
-            b = keypoints[comb[1]]
-            c = keypoints[comb[2]]
-
-            if (a is not None) and (b is not None) and (c is not None):
-                feature = self._compute_angle(np.array(a),
-                                              np.array(b),
-                                              np.array(c))
-            features.append(feature)
-        return np.array(features)
+        input_tensor = tfkl.Input(shape=(None, None, 3))
+        vgg_out = vgg_base(input_tensor)
+        prid_out = prid_head(vgg_out)
+        prid_model = tfk.Model(input_tensor, prid_out)
+        return prid_model
 
     @staticmethod
-    def _compute_angle(a, b, c):
-        """Computes angle on point 'b'."""
-        ba = a - b
-        bc = c - b
-
-        cosine_angle = np.dot(ba, bc) / ((np.linalg.norm(ba) * np.linalg.norm(bc)) + 0.0001)
-        angle = np.arccos(cosine_angle)
-        angle = np.degrees(angle)
-        return angle
+    def _create_head():
+        prid_input = tfkl.Input(shape=(None, None, 128), name='prid_input')
+        x = tfkl.Conv2D(128, (3, 3), padding='valid', use_bias=False, name='prid_conv1')(prid_input)
+        x = tfkl.PReLU(shared_axes=[1, 2], name='prid_prelu1')(x)
+        x = tfkl.MaxPooling2D((2, 2), strides=(2, 2), name='prid_pooling')(x)
+        x = tfkl.Conv2D(128, (3, 3), padding='valid', use_bias=False, name='prid_conv2')(x)
+        x = tfkl.PReLU(shared_axes=[1, 2], name='prid_prelu2')(x)
+        prid_out = tfkl.GlobalAveragePooling2D(name='prid_out')(x)
+        prid_head = tfk.Model(prid_input, prid_out)
+        return prid_head
