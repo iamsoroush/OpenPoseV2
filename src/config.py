@@ -22,6 +22,7 @@ class HyperConfig:
         self.gpu_device_number = 0
         self.scale_search = (0.8, 1.0, 1.2)
         self.pad_value = 128
+        self.drawing_stick = 10
         self.kp_names = ["Nose",
                          "Neck",
                          "RShoulder",
