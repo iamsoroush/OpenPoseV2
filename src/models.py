@@ -11,7 +11,7 @@ import tensorflow.keras.layers as tfkl
 
 import cv2
 
-from .utils import FeatureExtractor, Person, BoundingBox
+from .utils import FeatureExtractor, Detection, BoundingBox
 from .config import FeatureExtractorConfig
 
 
@@ -25,7 +25,8 @@ class OpenPoseV2:
 
     def __init__(self,
                  model_config,
-                 hyper_config):
+                 hyper_config,
+                 verbose=True):
         self.hyper_config = hyper_config
         self.openpose_model = FastOpenPoseV2Model(model_config)
         self.model = self.openpose_model.get_model()
@@ -33,26 +34,102 @@ class OpenPoseV2:
         self.fe = FeatureExtractor(fe_config)
         self.n_joints = len(hyper_config.kp_mapper) - 1
         self.n_limbs = len(hyper_config.connections)
-        self.drawing_stick = 15
+        self.drawing_stick = hyper_config.drawing_stick
 
         self.use_gpu = hyper_config.use_gpu
         self.gpu_device_number = hyper_config.gpu_device_number
         self.scale_search = hyper_config.scale_search
         self.pad_value = hyper_config.pad_value
 
-    def draw_pose(self, img):
+        self.verbose = verbose
 
-        # resized = tf.image.resize_with_pad(img,
-        #                                    self.openpose_model.input_res,
-        #                                    self.openpose_model.input_res)
-
-        # resized = cv2.resize(img,
-        #                      (self.openpose_model.input_w, self.openpose_model.input_h),
-        #                      interpolation=cv2.INTER_CUBIC)
+    def get_detections(self, img):
         resized = self._resize_with_pad(img, self.openpose_model.input_res, self.pad_value)
         t = time()
         peaks, subset, candidate = self._inference(resized)
-        print('complete inference: ', time() - t)
+        if self.verbose:
+            print('complete inference: ', time() - t)
+
+        org_h, org_w, _ = img.shape
+        if not subset.any():
+            return img
+        else:
+            transformed_candidate = self.inverse_transform_kps(org_h, org_w, candidate)
+
+        detections = list()
+        for i, person in enumerate(subset):
+            kps, overall_conf = self._extract_keypoints(person, transformed_candidate)
+            x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
+            pose_features = self.fe.generate_features(keypoints=kps)
+            bb = BoundingBox(x_min, x_max, y_min, y_max)
+            p = Detection(kps, transformed_candidate, person, overall_conf, bb, pose_features)
+            detections.append(p)
+        return detections
+
+    def draw(self,
+             img,
+             detections,
+             draw_bbox=True,
+             add_id=True,
+             draw_landmarks=True,
+             draw_limbs=True,
+             draw_errors=False):
+
+        """Draw ket-points, limbs, bounding boxes and ids on image.
+
+        Use as follows:
+            >> persons = openpose.get_persons(img)
+            >> drawed = openpose.draw(img, persons)
+
+        :arg img: input RGB(0, 255) image.
+        :arg detections: list of Detection objects.
+        :arg draw_bbox: draw vounding box or not.
+        :arg add_id: draw id or not.
+        :arg draw_landmarks: draw body joints or not.
+        :arg draw_limbs: draw body limbs or not.
+        :arg draw_errors: draw pose errors or not.
+        """
+
+        drawed = img.copy()
+        for person in detections:
+            x_min, y_min, x_max, y_max = person.bbox.data
+
+            # Draw bbox
+            if draw_bbox:
+                cv2.rectangle(drawed, (x_min, y_min), (x_max, y_max), person.get_bbox_color(), 2, 5)
+
+            # Add id
+            if add_id:
+                cv2.putText(drawed,
+                            str(person.id),
+                            (x_min + (x_max - x_min) // 3, y_min - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            1,
+                            person.get_bbox_color(),
+                            2)
+
+            # Draw pose landmarks
+            if draw_landmarks:
+                self._draw_kps(drawed, person.key_points)
+
+            # Draw limbs
+            if draw_limbs:
+                drawed = self._draw_connections(drawed, person.person_subset, person.transformed_candidate)
+
+            # Draw errors
+            if draw_errors:
+                drawed = self._draw_errors(drawed, person)
+        return drawed
+
+    def _draw_errors(self, drawed, person):
+        pass
+
+    def draw_pose(self, img):
+        resized = self._resize_with_pad(img, self.openpose_model.input_res, self.pad_value)
+        t = time()
+        peaks, subset, candidate = self._inference(resized)
+        if self.verbose:
+            print('complete inference: ', time() - t)
 
         org_h, org_w, _ = img.shape
         if not subset.any():
@@ -61,33 +138,30 @@ class OpenPoseV2:
             transformed_candidate = self.inverse_transform_kps(org_h, org_w, candidate)
 
         drawed = img.copy()
-        persons = list()
         for i, person in enumerate(subset):
             kps, overall_conf = self._extract_keypoints(person, transformed_candidate)
             x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
             pose_features = self.fe.generate_features(keypoints=kps)
             bb = BoundingBox(x_min, x_max, y_min, y_max)
-            p = Person(kps, overall_conf, bb, pose_features)
-            persons.append(p)
 
             # Draw bbox
             cv2.rectangle(drawed, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2, 5)
 
             # Add confidence score
-            cv2.putText(drawed,
-                        str(overall_conf),
-                        (x_min + (x_max - x_min) // 3, y_min - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        1,
-                        (0, 255, 0),
-                        2)
+            # cv2.putText(drawed,
+            #             str(overall_conf),
+            #             (x_min + (x_max - x_min) // 3, y_min - 10),
+            #             cv2.FONT_HERSHEY_SIMPLEX,
+            #             1,
+            #             (0, 255, 0),
+            #             2)
 
             # Draw pose landmarks
             self._draw_kps(drawed, kps)
 
             # Draw limbs
             drawed = self._draw_connections(drawed, person, transformed_candidate)
-        return drawed, persons
+        return drawed
 
     @staticmethod
     def _resize_with_pad(img, target_res, pad_value):
@@ -216,7 +290,8 @@ class OpenPoseV2:
                 part_peaks.append((x, y, conf_score, peak_inds[j]))
             all_peaks.append(part_peaks)
             peak_counter = peak_counter + n_peaks
-        print('_get_peaks: ', time() - t)
+        if self.verbose:
+            print('_get_peaks: ', time() - t)
         return all_peaks
 
     def _get_connections(self, paf, all_peaks):
@@ -271,7 +346,8 @@ class OpenPoseV2:
             else:
                 special_k.append(k)
                 connection_all.append([])
-        print('_get_connections: ', time() - t)
+        if self.verbose:
+            print('_get_connections: ', time() - t)
         return connection_all, special_k
 
     def _get_subset(self,
@@ -330,7 +406,8 @@ class OpenPoseV2:
             if subset[i][-1] < 8 or subset[i][-2] / subset[i][-1] < 0.4:
                 delete_idx.append(i)
         subset = np.delete(subset, delete_idx, axis=0)
-        print('_get_subset: ', time() - t)
+        if self.verbose:
+            print('_get_subset: ', time() - t)
         return subset, candidate
 
 
