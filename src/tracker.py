@@ -158,9 +158,6 @@ class SortTracker:
             # remove dead tracklet
             if trk.time_since_update > self.max_age:
                 self.trackers.pop(i)
-        if len(ret) > 0:
-            return np.concatenate(ret)
-        return np.empty((0, 5))
 
     def _associate_detections_to_trackers(self, detections, trackers, iou_threshold=0.3):
         """
@@ -215,5 +212,3 @@ class SortTracker:
         o = wh / ((bb_test[2] - bb_test[0]) * (bb_test[3] - bb_test[1])
                   + (bb_gt[2] - bb_gt[0]) * (bb_gt[3] - bb_gt[1]) - wh)
         return o
-
-
