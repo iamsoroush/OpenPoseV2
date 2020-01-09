@@ -11,7 +11,7 @@ import tensorflow.keras.layers as tfkl
 
 import cv2
 
-from .utils import FeatureExtractor, Detection, BoundingBox
+from .utils import FeatureExtractor, Detection, BoundingBox, Drawer
 from .config import FeatureExtractorConfig
 
 
@@ -30,16 +30,26 @@ class OpenPoseV2:
         self.hyper_config = hyper_config
         self.openpose_model = FastOpenPoseV2Model(model_config)
         self.model = self.openpose_model.get_model()
-        fe_config = FeatureExtractorConfig()
-        self.fe = FeatureExtractor(fe_config)
+
+        self.fe_config = FeatureExtractorConfig()
+        self.fe = FeatureExtractor(self.fe_config.points_comb)
+
         self.n_joints = len(hyper_config.kp_mapper) - 1
         self.n_limbs = len(hyper_config.connections)
+
         self.drawing_stick = hyper_config.drawing_stick
+        self.drawer = Drawer(feature_extractor=self.fe,
+                             colors=self.hyper_config.colors,
+                             n_limbs=self.n_limbs,
+                             connections=self.hyper_config.connections,
+                             stick=self.drawing_stick,
+                             error_th=self.hyper_config.error_th)
 
         self.use_gpu = hyper_config.use_gpu
         self.gpu_device_number = hyper_config.gpu_device_number
         self.scale_search = hyper_config.scale_search
         self.pad_value = hyper_config.pad_value
+        self.scales = hyper_config.scales
 
         self.verbose = verbose
 
@@ -62,106 +72,92 @@ class OpenPoseV2:
             x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
             pose_features = self.fe.generate_features(keypoints=kps)
             bb = BoundingBox(x_min, x_max, y_min, y_max)
-            p = Detection(kps, transformed_candidate, person, overall_conf, bb, pose_features)
+            p = Detection(kps,
+                          transformed_candidate,
+                          person,
+                          overall_conf,
+                          bb,
+                          pose_features,
+                          self.fe_config.points_comb_str)
             detections.append(p)
         return detections
 
-    def draw(self,
-             img,
-             detections,
-             draw_bbox=True,
-             add_id=True,
-             draw_landmarks=True,
-             draw_limbs=True,
-             draw_errors=False):
+    def _multi_scale_inference(self, img):
+        """Img must be of shape (self.openpose_model.input_res, self.openpose_model.input_res)."""
+
+        # TODO: comlpete this
+
+        org_h, org_w, _ = img.shape
+        pafs, heatmaps = list(), list()
+        for scale in self.scales:
+            scaled_img = cv2.resize(img, fx=scale, fy=scale)
+            hm, paf = self.openpose_model.base_model.predict(np.expand_dims(scaled_img, axis=0))
+            pafs.append(cv2.resize(paf, (org_w, org_h)))
+            heatmaps.append(cv2.resize(hm, (org_w, org_h)))
+
+
+        paf, masked_heatmap = self.model.predict(np.expand_dims(img, axis=0))
+        all_peaks = self._get_peaks(masked_heatmap)
+        connection_all, special_k = self._get_connections(paf[0], all_peaks)
+        subset, candidate = self._get_subset(all_peaks, special_k, connection_all)
+        return all_peaks, subset, candidate
+
+    def draw_detection(self,
+                       image,
+                       detection,
+                       draw_bbox=True,
+                       draw_id=True,
+                       draw_kps=True,
+                       draw_limbs=True,
+                       target_features=None):
 
         """Draw ket-points, limbs, bounding boxes and ids on image.
 
-        Use as follows:
-            >> persons = openpose.get_persons(img)
-            >> drawed = openpose.draw(img, persons)
+            Use as follows:
+                >> detections = openpose.get_detections(img)
+                >> drawed = img.copy()
+                >> for d in detections:
+                >>     drawed = openpose.draw_detection()
 
-        :arg img: input RGB(0, 255) image.
-        :arg detections: list of Detection objects.
-        :arg draw_bbox: draw vounding box or not.
-        :arg add_id: draw id or not.
-        :arg draw_landmarks: draw body joints or not.
-        :arg draw_limbs: draw body limbs or not.
-        :arg draw_errors: draw pose errors or not.
+            :arg image: input RGB(0, 255) image.
+            :arg detection: Detection object.
+            :arg draw_bbox: draw detection bounding box or not.
+            :arg draw_id: draw detection id or not.
+            :arg draw_kps: draw body joints or not.
+            :arg draw_limbs: draw body limbs or not.
+            :arg target_features: if passed, will compare detection with these features and draw the errors.
         """
 
-        drawed = img.copy()
-        for person in detections:
-            x_min, y_min, x_max, y_max = person.bbox.data
+        x_min, y_min, x_max, y_max = detection.bbox.data
 
-            # Draw bbox
-            if draw_bbox:
-                cv2.rectangle(drawed, (x_min, y_min), (x_max, y_max), person.get_bbox_color(), 2, 5)
+        # Draw bbox
+        if draw_bbox:
+            cv2.rectangle(image, (x_min, y_min), (x_max, y_max), detection.get_bbox_color(), 2, 5)
 
-            # Add id
-            if add_id:
-                cv2.putText(drawed,
-                            str(person.id),
-                            (x_min + (x_max - x_min) // 3, y_min - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1,
-                            person.get_bbox_color(),
-                            2)
+        # Draw id
+        if draw_id:
+            cv2.putText(image,
+                        str(detection.id),
+                        (x_min + (x_max - x_min) // 3, y_min - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        detection.get_bbox_color(),
+                        2)
 
-            # Draw pose landmarks
-            if draw_landmarks:
-                self._draw_kps(drawed, person.key_points)
+        # Draw pose landmarks
+        if draw_kps:
+            self.drawer.draw_kps(image, detection.key_points)
 
-            # Draw limbs
-            if draw_limbs:
-                drawed = self._draw_connections(drawed, person.person_subset, person.transformed_candidate)
+        # Draw limbs
+        if draw_limbs:
+            image = self.drawer.draw_connections(image, detection.person_subset, detection.transformed_candidate)
 
-            # Draw errors
-            if draw_errors:
-                drawed = self._draw_errors(drawed, person)
-        return drawed
-
-    def _draw_errors(self, drawed, person):
-        pass
-
-    def draw_pose(self, img):
-        resized = self._resize_with_pad(img, self.openpose_model.input_res, self.pad_value)
-        t = time()
-        peaks, subset, candidate = self._inference(resized)
-        if self.verbose:
-            print('complete inference: ', time() - t)
-
-        org_h, org_w, _ = img.shape
-        if not subset.any():
-            return img
-        else:
-            transformed_candidate = self.inverse_transform_kps(org_h, org_w, candidate)
-
-        drawed = img.copy()
-        for i, person in enumerate(subset):
-            kps, overall_conf = self._extract_keypoints(person, transformed_candidate)
-            x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
-            pose_features = self.fe.generate_features(keypoints=kps)
-            bb = BoundingBox(x_min, x_max, y_min, y_max)
-
-            # Draw bbox
-            cv2.rectangle(drawed, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2, 5)
-
-            # Add confidence score
-            # cv2.putText(drawed,
-            #             str(overall_conf),
-            #             (x_min + (x_max - x_min) // 3, y_min - 10),
-            #             cv2.FONT_HERSHEY_SIMPLEX,
-            #             1,
-            #             (0, 255, 0),
-            #             2)
-
-            # Draw pose landmarks
-            self._draw_kps(drawed, kps)
-
-            # Draw limbs
-            drawed = self._draw_connections(drawed, person, transformed_candidate)
-        return drawed
+        # Draw errors
+        if target_features is not None:
+            detection.calc_pose_error(target_features)
+            # image = self._draw_pose_feature_errors(image, detection)
+            image = self.drawer.draw_pose_errors(image, detection)
+        return image
 
     @staticmethod
     def _resize_with_pad(img, target_res, pad_value):
@@ -174,6 +170,7 @@ class OpenPoseV2:
         delta_w = target_res - new_size[1]
         delta_h = target_res - new_size[0]
         top, bottom = delta_h // 2, delta_h - (delta_h // 2)
+
         left, right = delta_w // 2, delta_w - (delta_w // 2)
 
         resized_padded = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT,
@@ -204,32 +201,6 @@ class OpenPoseV2:
         y_min = not_none_kps[y_min_ind, 1]
 
         return x_min, y_min, x_max, y_max
-
-    def _draw_kps(self, img, kps):
-        for i, kp in enumerate(kps):
-            if kp is not None:
-                cv2.circle(img, (int(kp[0]), int(kp[1])), self.drawing_stick, self.hyper_config.colors[i], thickness=-1)
-
-    def _draw_connections(self, img, person, transformed_candidate):
-        for i in range(self.n_limbs):
-            index = person[np.array(self.hyper_config.connections[i])]
-            if -1 in index:
-                continue
-            cur_canvas = img.copy()
-            y = transformed_candidate[index.astype(int), 0]
-            x = transformed_candidate[index.astype(int), 1]
-            m_x = np.mean(x)
-            m_y = np.mean(y)
-            length = np.sqrt(np.power(x[0] - x[1], 2) + np.power(y[0] - y[1], 2))
-            angle = np.degrees(np.arctan2(x[0] - x[1], y[0] - y[1]))
-            polygon = cv2.ellipse2Poly((int(m_y), int(m_x)),
-                                       (int(length / 2), self.drawing_stick),
-                                       int(angle),
-                                       0,
-                                       360, 1)
-            cv2.fillConvexPoly(cur_canvas, polygon, self.hyper_config.colors[i])
-            img = cv2.addWeighted(img, 0.4, cur_canvas, 0.6, 0)
-        return img
 
     def inverse_transform_kps(self, org_h, org_w, candidate):
         kps = candidate[:, 0: 2].astype(np.int)
@@ -429,6 +400,7 @@ class FastOpenPoseV2Model:
         self.resize_method = config.resize_method
         self.joint_threshold = config.joint_threshold
         self.connection_threshold = config.connection_threshold
+        self.base_model = None
 
     def get_model(self):
         model = self._create_model()
@@ -439,6 +411,7 @@ class FastOpenPoseV2Model:
         openpose_model = OpenPoseModelV2(resize_method=self.resize_method)
         openpose_raw = openpose_model.create_model()
         openpose_raw.load_weights(self.weights_path)
+        self.base_model = openpose_raw
 
         input_tensor = tfkl.Input(shape=(self.input_res, self.input_res, 3))
         hm, paf = openpose_raw(input_tensor)
