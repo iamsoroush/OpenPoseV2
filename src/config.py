@@ -10,7 +10,7 @@ class OpenPoseV2Config:
         self.resize_method = 'bicubic'
         project_root = normpath(abspath(dirname(dirname(realpath(__file__)))))
         self.weights_path = join(project_root, 'models', 'openpose_v2', 'openpose_body25_keras.h5')
-        self.input_res = 228
+        self.input_res = 358
         self.use_gaussian_filtering = True
         self.gaussian_kernel_sigma = 3
 
@@ -23,6 +23,8 @@ class HyperConfig:
         self.scale_search = (0.8, 1.0, 1.2)
         self.pad_value = 128
         self.drawing_stick = 10
+        self.scales = (0.8, 1.0, 1.2)
+        self.error_th = 5  # in degrees
         self.kp_names = ["Nose",
                          "Neck",
                          "RShoulder",
@@ -117,17 +119,62 @@ class HyperConfig:
 class FeatureExtractorConfig:
 
     def __init__(self):
-        self.points_comb = np.array([[4, 3, 2],
-                                    [3, 2, 1],
-                                    [1, 5, 6],
-                                    [5, 6, 7],
-                                    [2, 1, 0],
-                                    [2, 1, 8],
-                                    [1, 8, 9],
-                                    [1, 8, 12],
-                                    [8, 9, 10],
-                                    [9, 10, 11],
-                                    [10, 11, 22],
-                                    [8, 12, 13],
-                                    [12, 13, 14],
-                                    [13, 14, 19]])
+        self.kp_names = ["Nose",
+                         "Neck",
+                         "RShoulder",
+                         "RElbow",
+                         "RWrist",
+                         "LShoulder",
+                         "LElbow",
+                         "LWrist",
+                         "MidHip",
+                         "RHip",
+                         "RKnee",
+                         "RAnkle",
+                         "LHip",
+                         "LKnee",
+                         "LAnkle",
+                         "REye",
+                         "LEye",
+                         "REar",
+                         "LEar",
+                         "LBigToe",
+                         "LSmallToe",
+                         "LHeel",
+                         "RBigToe",
+                         "RSmallToe",
+                         "RHeel",
+                         "Background"]
+        mapper = dict(zip(self.kp_names, range(len(self.kp_names))))
+        # self.points_comb = np.array([[mapper['RShoulder'], mapper['RElbow'], mapper['RWrist']],
+        #                              [mapper['LWrist'], mapper['LElbow'], mapper['LShoulder']],
+        #                              [mapper['Neck'], mapper['RShoulder'], mapper['RHip']],
+        #                              [mapper['LHip'], mapper['LShoulder'], mapper['Neck']],
+        #                              [mapper['RHip'], mapper['RShoulder'], mapper['RElbow']],
+        #                              [mapper['LElbow'], mapper['LShoulder'], mapper['LHip']],
+        #                              [mapper['MidHip'], mapper['RHip'], mapper['RKnee']],
+        #                              [mapper['LKnee'], mapper['LHip'], mapper['MidHip']],
+        #                              [mapper['RHip'], mapper['RKnee'], mapper['RAnkle']],
+        #                              [mapper['LAnkle'], mapper['LKnee'], mapper['LHip']],
+        #                              [mapper['RBigToe'], mapper['RAnkle'], mapper['RKnee']],
+        #                              [mapper['LKnee'], mapper['LAnkle'], mapper['LBigToe']],
+        #                              [mapper['RShoulder'], mapper['Neck'], mapper['Nose']],
+        #                              [mapper['Nose'], mapper['Neck'], mapper['LShoulder']]])
+        self.points_comb_str = np.array([['RShoulder', 'RElbow', 'RWrist'],
+                                         ['LShoulder', 'LElbow', 'LWrist'],
+                                         ['Neck', 'RShoulder', 'RHip'],
+                                         ['Neck', 'MidHip', 'RHip'],
+                                         ['RHip', 'RShoulder', 'RElbow'],
+                                         ['LHip', 'LShoulder', 'LElbow'],
+                                         ['MidHip', 'RHip', 'RKnee'],
+                                         ['MidHip', 'LHip', 'LKnee'],
+                                         ['RHip', 'RKnee', 'RAnkle'],
+                                         ['LHip', 'LKnee', 'LAnkle'],
+                                         ['RBigToe', 'RAnkle', 'RKnee'],
+                                         ['LBigToe', 'LAnkle', 'LKnee'],
+                                         ['RShoulder', 'Neck', 'Nose'],
+                                         ['LShoulder', 'Neck', 'Nose']])
+        points_comb = list()
+        for row in self.points_comb_str:
+            points_comb.append([mapper[item] for item in row])
+        self.points_comb = np.array(points_comb)
