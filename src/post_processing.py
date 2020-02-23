@@ -134,9 +134,9 @@ class TemplatePose:
         return drawed
 
     def _draw_error(self, error, template, kp_name):
-        if error < self.hc.error_th:
+        if np.any(np.isnan(error)):
             return template
-        if not np.all(error):
+        if error < self.hc.error_th:
             return template
         radius = int(self.max_error_radius * error / 360)
         kp = self.template_kp[kp_name]
