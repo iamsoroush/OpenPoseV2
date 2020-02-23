@@ -136,6 +136,8 @@ class TemplatePose:
     def _draw_error(self, error, template, kp_name):
         if error < self.hc.error_th:
             return template
+        if not np.all(error):
+            return template
         radius = int(self.max_error_radius * error / 360)
         kp = self.template_kp[kp_name]
         overlay = template.copy()
