@@ -204,18 +204,18 @@ class OpenPoseV2:
 
     def _inverse_transform_candidate(self, org_h, org_w, candidate):
         kps = candidate[:, 0: 2].astype(np.int)
-        scale_factor = np.max([org_h, org_w]) / self.openpose_model.input_res
+        scale_factor = np.max([org_h, org_w]) / self.input_res
         transformed_candidate = np.zeros((candidate.shape[0], 3))
         if org_h > org_w:
             resized_w = org_w / scale_factor
-            border = (self.openpose_model.input_res - resized_w) / 2
+            border = (self.input_res - resized_w) / 2
             for i, kp in enumerate(kps):
                 transformed_candidate[i, 0] = scale_factor * (kp[0] - border)
                 transformed_candidate[i, 1] = scale_factor * kp[1]
                 transformed_candidate[i, 2] = candidate[i, 2]
         else:
             resized_h = org_h / scale_factor
-            border = (self.openpose_model.input_res - resized_h) / 2
+            border = (self.input_res - resized_h) / 2
             for i, kp in enumerate(kps):
                 transformed_candidate[i, 0] = scale_factor * kp[0]
                 transformed_candidate[i, 1] = scale_factor * (kp[1] - border)
@@ -268,7 +268,7 @@ class InterMediateOpenPose:
         return all_peaks, subset, candidate
 
     def _multi_scale_inference(self, img):
-        """Img must be of shape (self.openpose_model.input_res, self.openpose_model.input_res)."""
+        """Img must be of shape (self.input_res, self.input_res)."""
 
         # TODO: comlpete this
 
@@ -339,7 +339,7 @@ class InterMediateOpenPose:
 
                         score_mid_pts = np.multiply(vec_x, vec[0]) + np.multiply(vec_y, vec[1])
                         score_with_dist_prior = sum(score_mid_pts) / len(score_mid_pts) + min(
-                            0.5 * self.openpose_model.input_res / norm - 1, 0)
+                            0.5 * self.input_res / norm - 1, 0)
                         criterion1 = len(np.nonzero(score_mid_pts > self.openpose_model.connection_threshold)[0]) > 0.8 * len(
                             score_mid_pts)
                         criterion2 = score_with_dist_prior > 0
