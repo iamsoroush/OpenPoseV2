@@ -245,12 +245,8 @@ class InterMediateOpenPose:
                  verbose):
         self.hyper_config = hyper_config
         self.openpose_model = FastOpenPoseV2Model(model_config, input_h, input_w)
-        if input_h is None and input_w is None:
-            self.input_res = input_h
-        elif input_h == input_w:
-            self.input_res = input_h
-        else:
-            self.input_res = None
+        self.input_res = self.openpose_model.input_res
+
         self.model = self.openpose_model.get_model()
 
         self.n_joints = len(hyper_config.kp_mapper) - 1
@@ -446,14 +442,18 @@ class FastOpenPoseV2Model:
                  input_h=None,
                  input_w=None):
         self.weights_path = config.weights_path
+
         if input_h is None and input_w is None:
             self.input_h = config.input_res
             self.input_w = config.input_res
             self.input_res = config.input_res
         else:
-            self.input_h = input_h
             self.input_w = input_w
-            self.input_res = None
+            self.input_h = input_h
+            if input_h == input_w:
+                self.input_res = input_h
+            else:
+                self.input_res = None
         self.use_gaussian_filtering = config.use_gaussian_filtering
         self.gaussian_kernel_sigma = config.gaussian_kernel_sigma
         self.resize_method = config.resize_method
