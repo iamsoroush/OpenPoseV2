@@ -245,6 +245,12 @@ class InterMediateOpenPose:
                  verbose):
         self.hyper_config = hyper_config
         self.openpose_model = FastOpenPoseV2Model(model_config, input_h, input_w)
+        if input_h is None and input_w is None:
+            self.input_res = input_h
+        elif input_h == input_w:
+            self.input_res = input_h
+        else:
+            self.input_res = None
         self.model = self.openpose_model.get_model()
 
         self.n_joints = len(hyper_config.kp_mapper) - 1
