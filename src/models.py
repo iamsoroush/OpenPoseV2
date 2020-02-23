@@ -73,26 +73,24 @@ class OpenPoseV2:
         if self.verbose:
             print('complete inference: ', time() - t)
 
-        org_h, org_w, _ = img.shape
-        if not subset.any():
-            return img
-        else:
+        detections = list()
+        if subset.any():
+            org_h, org_w, _ = img.shape
             transformed_candidate = self._inverse_transform_candidate(org_h, org_w, candidate)
 
-        detections = list()
-        for i, person in enumerate(subset):
-            kps, overall_conf = self._extract_keypoints(person, transformed_candidate)
-            x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
-            pose_features = self.fe.generate_features(keypoints=kps)
-            bb = BoundingBox(x_min, x_max, y_min, y_max)
-            p = Detection(kps,
-                          transformed_candidate,
-                          person,
-                          overall_conf,
-                          bb,
-                          pose_features,
-                          self.fe_config.points_comb_str)
-            detections.append(p)
+            for i, person in enumerate(subset):
+                kps, overall_conf = self._extract_keypoints(person, transformed_candidate)
+                x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
+                pose_features = self.fe.generate_features(keypoints=kps)
+                bb = BoundingBox(x_min, x_max, y_min, y_max)
+                p = Detection(kps,
+                              transformed_candidate,
+                              person,
+                              overall_conf,
+                              bb,
+                              pose_features,
+                              self.fe_config.points_comb_str)
+                detections.append(p)
         return detections
 
     def draw_detection(self,
