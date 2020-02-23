@@ -15,7 +15,7 @@ class AIDA:
 
     """Main wrapper for AI-based dance analysing."""
 
-    def __init__(self, openpose_config, hyper_config, verbose):
+    def __init__(self, openpose_config, hyper_config, verbose=False):
         if openpose_config is None:
             openpose_config = OpenPoseV2Config()
         if hyper_config is None:
@@ -25,8 +25,6 @@ class AIDA:
     def _get_sample_persons(self, video_path, to_run=5):
         vidcap = cv2.VideoCapture(video_path)
 
-        width = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = vidcap.get(cv2.CAP_PROP_FPS)
         n_frames = int(to_run * fps)
 
@@ -75,7 +73,8 @@ class AIDA:
             n_frames = fc
 
         fourcc = cv2.VideoWriter_fourcc(*'MP4V')
-        outvid = cv2.VideoWriter(os.path.join(out_dir, 'out.mp4'), fourcc, fps, (width, height))
+        outvid_path = os.path.join(out_dir, 'out.mp4')
+        outvid = cv2.VideoWriter(outvid_path, fourcc, fps, (width, height))
 
         tracker = SortTracker()
         tracks = dict()
@@ -118,10 +117,12 @@ class AIDA:
         vidcap.release()
         outvid.release()
 
-        with open(os.path.join(out_dir, 'tracks.pkl'), 'wb') as output:
+        tracks_path = os.path.join(out_dir, 'tracks.pkl')
+        with open(tracks_path, 'wb') as output:
             pickle.dump(tracks, output, pickle.HIGHEST_PROTOCOL)
 
-        print('Wrote results on ', out_dir)
+        print('Wrote video on ', outvid_path)
+        print('Wrote tracks on ', tracks_path)
 
     def run_on_webcam(self):
         pass
