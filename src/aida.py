@@ -15,15 +15,12 @@ class AIDA:
 
     """Main wrapper for AI-based dance analysing."""
 
-    def __init__(self):
-        self.openpose = self._load_model(False)
-
-    @staticmethod
-    def _load_model(verbose):
-        openpose_config = OpenPoseV2Config()
-        hyper_config = HyperConfig()
-        openpose = OpenPoseV2(openpose_config, hyper_config, verbose=verbose)
-        return openpose
+    def __init__(self, openpose_config, hyper_config, verbose):
+        if openpose_config is None:
+            openpose_config = OpenPoseV2Config()
+        if hyper_config is None:
+            hyper_config = HyperConfig()
+        self.openpose = OpenPoseV2(openpose_config, hyper_config, verbose=verbose)
 
     def _get_sample_persons(self, video_path, to_run=5):
         vidcap = cv2.VideoCapture(video_path)
