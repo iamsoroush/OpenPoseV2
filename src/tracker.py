@@ -2,6 +2,8 @@ import numpy as np
 from sklearn.utils.linear_assignment_ import linear_assignment
 from filterpy.kalman import KalmanFilter
 
+from .utils import Track
+
 
 class KalmanBoxTracker:
     """
@@ -12,6 +14,9 @@ class KalmanBoxTracker:
     def __init__(self, bbox, initial_detection):
         """
         Initialises a tracker using initial bounding box.
+
+        :arg bbox: bounding box in the (xmin, y_min, xmax, ymax) format.
+        :arg initial_detection: initial *Detection* object.
         """
         # define constant velocity model
         self.kf = KalmanFilter(dim_x=7, dim_z=4)
@@ -31,17 +36,19 @@ class KalmanBoxTracker:
         self.time_since_update = 0
         self.id = KalmanBoxTracker.count
         KalmanBoxTracker.count += 1
-        initial_detection.id = self.id
         self.history = [initial_detection]
         self.hits = 0
         self.hit_streak = 0
         self.age = 0
+        initial_detection.id = self.id
+        self.track = Track(self.id)
 
-    def update(self, bbox, detection):
+    def update(self, bbox, detection, frame_ind):
         """
         Updates the state vector with observed bbox.
         """
         detection.id = self.id
+        self.track.update(detection, frame_ind)
         self.time_since_update = 0
         self.history.append(detection)
         self.hits += 1
@@ -99,7 +106,7 @@ class KalmanBoxTracker:
 
 
 class SortTracker:
-    def __init__(self, max_age=1, min_hits=3):
+    def __init__(self, max_age=3, min_hits=3):
         """
         Sets key parameters for SORT
         """
@@ -143,7 +150,7 @@ class SortTracker:
         for t, trk in enumerate(self.trackers):
             if t not in unmatched_trks:
                 d = matched[np.where(matched[:, 1] == t)[0], 0][0]
-                trk.update(dets[d, :], detections[d])
+                trk.update(dets[d, :], detections[d], self.frame_count)
 
         # create and initialise new trackers for unmatched detections
         for i in unmatched_dets:

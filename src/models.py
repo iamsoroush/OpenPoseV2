@@ -28,8 +28,14 @@ class OpenPoseV2:
                  hyper_config,
                  verbose=True):
         self.hyper_config = hyper_config
-        self.openpose_model = FastOpenPoseV2Model(model_config)
-        self.model = self.openpose_model.get_model()
+        self.openpose_model = InterMediateOpenPose(model_config=model_config,
+                                                   hyper_config=hyper_config,
+                                                   input_h=None,
+                                                   input_w=None,
+                                                   verbose=verbose)
+        self.input_res = self.openpose_model.openpose_model.input_res
+        # self.openpose_model = FastOpenPoseV2Model(model_config)
+        # self.model = self.openpose_model.get_model()
 
         self.fe_config = FeatureExtractorConfig()
         self.fe = FeatureExtractor(self.fe_config.points_comb)
@@ -54,9 +60,16 @@ class OpenPoseV2:
         self.verbose = verbose
 
     def get_detections(self, img):
-        resized = self._resize_with_pad(img, self.openpose_model.input_res, self.pad_value)
+        """Returns a list of Detection objects, each one for a seperate detected pose.
+
+        :arg img: RGB(0, 255) image.
+        """
+
+        resized = self._resize_with_pad(img, self.input_res, self.pad_value)
+
         t = time()
-        peaks, subset, candidate = self._inference(resized)
+        # peaks, subset, candidate = self._inference(resized)
+        peaks, subset, candidate = self.openpose_model.estimate(resized)
         if self.verbose:
             print('complete inference: ', time() - t)
 
@@ -64,7 +77,7 @@ class OpenPoseV2:
         if not subset.any():
             return img
         else:
-            transformed_candidate = self.inverse_transform_kps(org_h, org_w, candidate)
+            transformed_candidate = self._inverse_transform_candidate(org_h, org_w, candidate)
 
         detections = list()
         for i, person in enumerate(subset):
@@ -81,26 +94,6 @@ class OpenPoseV2:
                           self.fe_config.points_comb_str)
             detections.append(p)
         return detections
-
-    def _multi_scale_inference(self, img):
-        """Img must be of shape (self.openpose_model.input_res, self.openpose_model.input_res)."""
-
-        # TODO: comlpete this
-
-        org_h, org_w, _ = img.shape
-        pafs, heatmaps = list(), list()
-        for scale in self.scales:
-            scaled_img = cv2.resize(img, fx=scale, fy=scale)
-            hm, paf = self.openpose_model.base_model.predict(np.expand_dims(scaled_img, axis=0))
-            pafs.append(cv2.resize(paf, (org_w, org_h)))
-            heatmaps.append(cv2.resize(hm, (org_w, org_h)))
-
-
-        paf, masked_heatmap = self.model.predict(np.expand_dims(img, axis=0))
-        all_peaks = self._get_peaks(masked_heatmap)
-        connection_all, special_k = self._get_connections(paf[0], all_peaks)
-        subset, candidate = self._get_subset(all_peaks, special_k, connection_all)
-        return all_peaks, subset, candidate
 
     def draw_detection(self,
                        image,
@@ -154,7 +147,7 @@ class OpenPoseV2:
 
         # Draw errors
         if target_features is not None:
-            detection.calc_pose_error(target_features)
+            detection.update_pose_error(target_features)
             # image = self._draw_pose_feature_errors(image, detection)
             image = self.drawer.draw_pose_errors(image, detection)
         return image
@@ -176,6 +169,15 @@ class OpenPoseV2:
         resized_padded = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT,
                                             value=(pad_value, pad_value, pad_value))
         return resized_padded
+
+    @staticmethod
+    def _resize_aspect_ratio(img, scale_factor):
+        org_h, org_w = np.array(img.shape[:2])
+        new_w = (org_h * scale_factor).astype(int)
+        new_h = (org_w * scale_factor).astype(int)
+
+        resized = cv2.resize(img, (new_h, new_w))
+        return resized
 
     def _get_bbox(self, kps, org_w, org_h):
         x_min, y_min, x_max, y_max = self._get_ul_lr(kps)
@@ -202,7 +204,7 @@ class OpenPoseV2:
 
         return x_min, y_min, x_max, y_max
 
-    def inverse_transform_kps(self, org_h, org_w, candidate):
+    def _inverse_transform_candidate(self, org_h, org_w, candidate):
         kps = candidate[:, 0: 2].astype(np.int)
         scale_factor = np.max([org_h, org_w]) / self.openpose_model.input_res
         transformed_candidate = np.zeros((candidate.shape[0], 3))
@@ -234,8 +236,51 @@ class OpenPoseV2:
                 joint_confidences.append(candidate_arr[kp_ind, 2])
         return kps, np.mean(joint_confidences)
 
-    def _inference(self, img):
+
+class InterMediateOpenPose:
+
+    def __init__(self,
+                 model_config,
+                 hyper_config,
+                 input_h,
+                 input_w,
+                 verbose):
+        self.hyper_config = hyper_config
+        self.openpose_model = FastOpenPoseV2Model(model_config, input_h, input_w)
+        self.model = self.openpose_model.get_model()
+
+        self.n_joints = len(hyper_config.kp_mapper) - 1
+        self.n_limbs = len(hyper_config.connections)
+
+        self.use_gpu = hyper_config.use_gpu
+        self.gpu_device_number = hyper_config.gpu_device_number
+        self.scale_search = hyper_config.scale_search
+        self.pad_value = hyper_config.pad_value
+        self.scales = hyper_config.scales
+
+        self.verbose = verbose
+
+    def estimate(self, img):
+        """Img must be of shape (self.openpose_model.input_h, self.openpose_model.input_w)."""
+
+        paf, masked_heatmap = self.model.predict(np.expand_dims(img, axis=0))
+        all_peaks = self._get_peaks(masked_heatmap)
+        connection_all, special_k = self._get_connections(paf[0], all_peaks)
+        subset, candidate = self._get_subset(all_peaks, special_k, connection_all)
+        return all_peaks, subset, candidate
+
+    def _multi_scale_inference(self, img):
         """Img must be of shape (self.openpose_model.input_res, self.openpose_model.input_res)."""
+
+        # TODO: comlpete this
+
+        org_h, org_w, _ = img.shape
+        pafs, heatmaps = list(), list()
+        for scale in self.scales:
+            scaled_img = cv2.resize(img, fx=scale, fy=scale)
+            hm, paf = self.openpose_model.base_model.predict(np.expand_dims(scaled_img, axis=0))
+            pafs.append(cv2.resize(paf, (org_w, org_h)))
+            heatmaps.append(cv2.resize(hm, (org_w, org_h)))
 
         paf, masked_heatmap = self.model.predict(np.expand_dims(img, axis=0))
         all_peaks = self._get_peaks(masked_heatmap)
@@ -389,12 +434,22 @@ class FastOpenPoseV2Model:
     Key-point extraction implemented as graph definitions
 
     Note: pass the image in shape=input_res as RGB(0, 255)
+    Note: Resize and pad the image to (input_res, input_res), this gives better results.
     """
 
     def __init__(self,
-                 config):
+                 config,
+                 input_h=None,
+                 input_w=None):
         self.weights_path = config.weights_path
-        self.input_res = config.input_res
+        if input_h is None and input_w is None:
+            self.input_h = config.input_res
+            self.input_w = config.input_res
+            self.input_res = config.input_res
+        else:
+            self.input_h = input_h
+            self.input_w = input_w
+            self.input_res = None
         self.use_gaussian_filtering = config.use_gaussian_filtering
         self.gaussian_kernel_sigma = config.gaussian_kernel_sigma
         self.resize_method = config.resize_method
@@ -413,7 +468,7 @@ class FastOpenPoseV2Model:
         openpose_raw.load_weights(self.weights_path)
         self.base_model = openpose_raw
 
-        input_tensor = tfkl.Input(shape=(self.input_res, self.input_res, 3))
+        input_tensor = tfkl.Input(shape=(self.input_h, self.input_w, 3))
         hm, paf = openpose_raw(input_tensor)
 
         if self.use_gaussian_filtering:
@@ -428,10 +483,10 @@ class FastOpenPoseV2Model:
         paddings = tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]])
         padded = tf.pad(hm, paddings)
 
-        slice1 = tf.slice(padded, [0, 0, 1, 0], [-1, self.input_res, self.input_res, -1])
-        slice2 = tf.slice(padded, [0, 2, 1, 0], [-1, self.input_res, self.input_res, -1])
-        slice3 = tf.slice(padded, [0, 1, 0, 0], [-1, self.input_res, self.input_res, -1])
-        slice4 = tf.slice(padded, [0, 1, 2, 0], [-1, self.input_res, self.input_res, -1])
+        slice1 = tf.slice(padded, [0, 0, 1, 0], [-1, self.input_h, self.input_w, -1])
+        slice2 = tf.slice(padded, [0, 2, 1, 0], [-1, self.input_h, self.input_w, -1])
+        slice3 = tf.slice(padded, [0, 1, 0, 0], [-1, self.input_h, self.input_w, -1])
+        slice4 = tf.slice(padded, [0, 1, 2, 0], [-1, self.input_h, self.input_w, -1])
 
         stacked = tf.stack([hm >= slice1,
                             hm >= slice2,

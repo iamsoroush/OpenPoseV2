@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 
 
-class Person:
+class Track:
 
     """Base class for tracking trajectories.
 
@@ -36,8 +36,6 @@ class Detection:
         self.confidence = confidence
         self.bbox = bbox
         self.pose_features = pose_features
-        self.pose_error = None
-        self.id = None
         self.colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0],
                        [255, 255, 0], [170, 255, 0], [85, 255, 0],
                        [0, 255, 0], [0, 255, 85], [0, 255, 170],
@@ -48,6 +46,12 @@ class Detection:
                        [255, 85, 85], [255, 85, 170], [255, 85, 255],
                        [170, 170, 170]]
         self.pose_feature_combs = pose_feature_combs
+
+        self.pose_error = None
+        self.id = None
+        self.head_bbox = None
+        self.person_representation = None
+        self.face_representation = None
 
     def get_crop(self, img):
         """:arg img: RGB(0, 255) image."""
@@ -63,7 +67,7 @@ class Detection:
         else:
             return self.colors[int(self.id)]
 
-    def calc_pose_error(self, target_features):
+    def update_pose_error(self, target_features):
         errors = list()
         for i in range(len(self.pose_features)):
             f = self.pose_features[i]

@@ -10,7 +10,7 @@ class OpenPoseV2Config:
         self.resize_method = 'bicubic'
         project_root = normpath(abspath(dirname(dirname(realpath(__file__)))))
         self.weights_path = join(project_root, 'models', 'openpose_v2', 'openpose_body25_keras.h5')
-        self.input_res = 358
+        self.input_res = 368
         self.use_gaussian_filtering = True
         self.gaussian_kernel_sigma = 3
 
@@ -24,7 +24,7 @@ class HyperConfig:
         self.pad_value = 128
         self.drawing_stick = 10
         self.scales = (0.8, 1.0, 1.2)
-        self.error_th = 5  # in degrees
+        self.error_th = 10  # in degrees
         self.kp_names = ["Nose",
                          "Neck",
                          "RShoulder",
