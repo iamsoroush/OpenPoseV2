@@ -68,7 +68,7 @@ class Detection:
             return self.colors[int(self.id)]
 
     def update_pose_error(self, target_features):
-        errors = list()
+        errors = np.zeros(len(self.pose_features), dtype=np.float)
         for i in range(len(self.pose_features)):
             f = self.pose_features[i]
             ft = target_features[i]
@@ -80,9 +80,9 @@ class Detection:
                     else:
                         f_diff = 360 - np.abs(f_diff)
             else:
-                f_diff = None
-            errors.append(f_diff)
-        self.pose_error = np.array(errors, dtype=np.float)
+                f_diff = np.nan
+            errors[i] = f_diff
+        self.pose_error = errors
 
 
 class BoundingBox:
