@@ -223,14 +223,19 @@ class OpenPoseV2:
         return transformed_candidate
 
     def _extract_keypoints(self, person_subset, candidate_arr):
-        kps = list()
+
+        """Extracts pose keypoints from OpenPose outputs.
+
+        Returns an array of shape(self.n_joints, 2) with hidden joints of np.nan values.
+        """
+
+        kps = np.zeros((self.n_joints, 2), dtype=np.int)
+        kps[:] = np.nan
         joint_confidences = list()
         for i in range(self.n_joints):
             kp_ind = person_subset[i].astype(np.int)
-            if kp_ind == -1:
-                kps.append(None)
-            else:
-                kps.append(candidate_arr[kp_ind, 0: 2].astype(np.int))
+            if not kp_ind == -1:
+                kps[i] = candidate_arr[kp_ind, 0: 2].astype(np.int)
                 joint_confidences.append(candidate_arr[kp_ind, 2])
         return kps, np.mean(joint_confidences)
 
