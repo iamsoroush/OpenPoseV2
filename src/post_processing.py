@@ -14,7 +14,7 @@ class PostProcessor:
     def __init__(self,
                  fps,
                  moving_average_len=3,
-                 overlap=0.5,
+                 overlap=1,
                  window_len=2):
 
         """Post processing for pose sequences and corresponding errors.
@@ -37,8 +37,10 @@ class PostProcessor:
         """Extracts person errors' absolute values, interpolates nan elements and returns
             moving-averaged signals if moving_av==True.
 
-        :param moving_av: whether to do moving-average on signals.
         :arg person: an instance of Person class.
+
+        :returns pandas.DataFrame in which each column corresponds  to a feature-landmark-combination and  each row
+            represents the frame number.
         """
 
         person_frames = list(person.detections.keys())
@@ -69,6 +71,18 @@ class PostProcessor:
         return out
 
     def get_epoch_information(self, errors_df, peak_freq=10):
+
+        """Returns low-pass filtered error for each self.window_len seconds,
+         overlapped in respect to self.overlap attribute.
+
+        :arg errors_df: pandas.DataFrame object, returned by self.get_person_errors method.
+        :arg peak_freq: the highest frequency component for low-pass filter.
+
+        :returns a pandas.DataFrame with each column representing a feature-landmark-combination and each row
+            representing the epoch interval, e.g. for fourth row with self.overlap=1 and self.window_len=1  it will be
+            '3 --> 4'.
+        """
+
         t_steps = int(errors_df.shape[0])
         epoched_errors = list()
         index = list()
@@ -100,12 +114,6 @@ class PostProcessor:
         filtered_sig = fftpack.irfft(high_freq_fft)
         return filtered_sig.T
 
-    def _get_frame_inds_for_epoch(self, epoch_name):
-        epoch_number = epoch_name.split('_')[-1]
-        start = int((epoch_number - 1) * self.overlap)
-        end = start + self.window_len
-        return start, end
-
 
 class TemplatePose:
 
@@ -126,7 +134,10 @@ class TemplatePose:
 
     def get_error_template(self, errors):
 
-        """:arg errors: {'joint_1': error_1, ... , 'joints_n': error_n}"""
+        """Returns template with drawed errors on it.
+
+        :arg errors: {'joint_1': error_1, ... , 'joints_n': error_n}
+        """
 
         drawed = self.standing_img.copy()
         for kp_name, kp_err in errors.items():
@@ -136,14 +147,15 @@ class TemplatePose:
     def _draw_error(self, error, template, kp_name):
         if np.any(np.isnan(error)):
             return template
-        if error < self.hc.error_th:
+        elif error < self.hc.error_th:
             return template
-        radius = int(self.max_error_radius * error / 360)
-        kp = self.template_kp[kp_name]
-        overlay = template.copy()
-        cv2.circle(overlay, (int(kp[0]), int(kp[1])), radius, self.error_color, thickness=-1)
-        drawed = cv2.addWeighted(template, 0.4, overlay, 0.6, 0)
-        return drawed
+        else:
+            radius = int(self.max_error_radius * error / 360)
+            kp = self.template_kp[kp_name]
+            overlay = template.copy()
+            cv2.circle(overlay, (int(kp[0]), int(kp[1])), radius, self.error_color, thickness=-1)
+            drawed = cv2.addWeighted(template, 0.4, overlay, 0.6, 0)
+            return drawed
 
     def _get_template(self, openpose=None):
         standing_img = cv2.cvtColor(cv2.imread(self.standing_img_path), cv2.COLOR_BGR2RGB)
