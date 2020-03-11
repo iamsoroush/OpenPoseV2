@@ -19,8 +19,9 @@ class OpenPoseV2:
 
     """OpenPose body_25 version.
 
-    Given a RGB(0, 255) image, model resizes it to self.input_res, and makes inference on that.
-    Note that the resize function is based on tensorflow's resize_and_pad with pad values of self.pad_value.
+    Given a RGB(0, 255) image, model resize-pads it to (model_config.input_res, model_config.input_res),
+     and makes inference on it.
+    Note that the resize function is based on tensorflow's resize_and_pad with pad values of hyper_config.pad_value.
     """
 
     def __init__(self,
@@ -28,12 +29,10 @@ class OpenPoseV2:
                  hyper_config,
                  verbose=True):
         self.hyper_config = hyper_config
+        self.input_res = model_config.input_res
         self.openpose_model = InterMediateOpenPose(model_config=model_config,
                                                    hyper_config=hyper_config,
-                                                   input_h=None,
-                                                   input_w=None,
                                                    verbose=verbose)
-        self.input_res = self.openpose_model.openpose_model.input_res
         # self.openpose_model = FastOpenPoseV2Model(model_config)
         # self.model = self.openpose_model.get_model()
 
@@ -59,17 +58,21 @@ class OpenPoseV2:
 
         self.verbose = verbose
 
-    def get_detections(self, img):
+    def get_detections(self, img, multi_scale=False):
         """Returns a list of Detection objects, each one for a seperate detected pose.
 
-        :arg img: RGB(0, 255) image.
+        :param multi_scale: to use multi-scale inference or not.
+        :param img: RGB(0, 255) image.
         """
 
         resized = self._resize_with_pad(img, self.input_res, self.pad_value)
 
         t = time()
         # peaks, subset, candidate = self._inference(resized)
-        peaks, subset, candidate = self.openpose_model.estimate(resized)
+        if multi_scale:
+            peaks, subset, candidate = self.openpose_model.multi_scale_inference(resized, 3)
+        else:
+            peaks, subset, candidate = self.openpose_model.estimate(resized)
         if self.verbose:
             print('complete inference: ', time() - t)
 
@@ -202,24 +205,40 @@ class OpenPoseV2:
 
         return x_min, y_min, x_max, y_max
 
-    def _inverse_transform_candidate(self, org_h, org_w, candidate):
-        kps = candidate[:, 0: 2].astype(np.int)
-        scale_factor = np.max([org_h, org_w]) / self.input_res
-        transformed_candidate = np.zeros((candidate.shape[0], 3))
-        if org_h > org_w:
-            resized_w = org_w / scale_factor
-            border = (self.input_res - resized_w) / 2
-            for i, kp in enumerate(kps):
-                transformed_candidate[i, 0] = scale_factor * (kp[0] - border)
-                transformed_candidate[i, 1] = scale_factor * kp[1]
-                transformed_candidate[i, 2] = candidate[i, 2]
+    def _inverse_transform_candidate(self, org_h, org_w, candidate, preserve_aspect_ratio=False):
+        if preserve_aspect_ratio:
+            return self._inverse_tform_cand_preserve_ar(org_h, org_w, candidate)
         else:
-            resized_h = org_h / scale_factor
-            border = (self.input_res - resized_h) / 2
-            for i, kp in enumerate(kps):
-                transformed_candidate[i, 0] = scale_factor * kp[0]
-                transformed_candidate[i, 1] = scale_factor * (kp[1] - border)
-                transformed_candidate[i, 2] = candidate[i, 2]
+            kps = candidate[:, 0: 2].astype(np.int)
+            scale_factor = np.max([org_h, org_w]) / self.input_res
+            transformed_candidate = np.zeros((candidate.shape[0], 3))
+            if org_h > org_w:
+                resized_w = org_w / scale_factor
+                border = (self.input_res - resized_w) / 2
+                for i, kp in enumerate(kps):
+                    transformed_candidate[i, 0] = scale_factor * (kp[0] - border)
+                    transformed_candidate[i, 1] = scale_factor * kp[1]
+                    transformed_candidate[i, 2] = candidate[i, 2]
+            else:
+                resized_h = org_h / scale_factor
+                border = (self.input_res - resized_h) / 2
+                for i, kp in enumerate(kps):
+                    transformed_candidate[i, 0] = scale_factor * kp[0]
+                    transformed_candidate[i, 1] = scale_factor * (kp[1] - border)
+                    transformed_candidate[i, 2] = candidate[i, 2]
+            return transformed_candidate
+
+    def _inverse_tform_cand_preserve_ar(self, org_h, org_w, candidate):
+        kps = candidate[:, 0: 2].astype(np.int)
+
+        scale_h = org_h / self.input_res
+        scale_w = org_w / self.input_w
+
+        transformed_candidate = np.zeros((candidate.shape[0], 3))
+        for i, kp in enumerate(kps):
+            transformed_candidate[i, 0] = scale_h * kp[0]
+            transformed_candidate[i, 1] = scale_w * kp[1]
+            transformed_candidate[i, 2] = candidate[i, 2]
         return transformed_candidate
 
     def _extract_keypoints(self, person_subset, candidate_arr):
@@ -245,12 +264,10 @@ class InterMediateOpenPose:
     def __init__(self,
                  model_config,
                  hyper_config,
-                 input_h,
-                 input_w,
                  verbose):
         self.hyper_config = hyper_config
-        self.openpose_model = FastOpenPoseV2Model(model_config, input_h, input_w)
-        self.input_res = self.openpose_model.input_res
+        self.openpose_model = FastOpenPoseV2Model(model_config)
+        self.input_res = model_config.input_res
 
         self.model = self.openpose_model.get_model()
 
@@ -274,24 +291,53 @@ class InterMediateOpenPose:
         subset, candidate = self._get_subset(all_peaks, special_k, connection_all)
         return all_peaks, subset, candidate
 
-    def _multi_scale_inference(self, img):
-        """Img must be of shape (self.input_res, self.input_res)."""
+    def multi_scale_inference(self, img, gauss_sigma):
+        """Multi-scale inference on given image, based on self.scales ."""
 
-        # TODO: comlpete this
+        # TODO: complete this
 
-        org_h, org_w, _ = img.shape
-        pafs, heatmaps = list(), list()
-        for scale in self.scales:
-            scaled_img = cv2.resize(img, fx=scale, fy=scale)
+        h, w = img.shape[:2]
+
+        n_hm = 26
+        n_paf = 52
+
+        heatmaps = np.zeros((len(self.scales), h, w, n_hm))
+        pafs = np.zeros((len(self.scales), h, w, n_paf))
+
+        for i, scale in enumerate(self.scales):
+            scaled_img = cv2.resize(img, dsize=None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
             hm, paf = self.openpose_model.base_model.predict(np.expand_dims(scaled_img, axis=0))
-            pafs.append(cv2.resize(paf, (org_w, org_h)))
-            heatmaps.append(cv2.resize(hm, (org_w, org_h)))
+            heatmaps[i] = cv2.resize(hm[0], dsize=None, fx=1 / scale, fy=1 / scale, interpolation=cv2.INTER_CUBIC)
+            pafs[i] = cv2.resize(paf[0], dsize=None, fx=1 / scale, fy=1 / scale, interpolation=cv2.INTER_CUBIC)
+        mean_hm = np.mean(heatmaps, axis=0)
+        mean_paf = np.mean(pafs, axis=0)
 
-        paf, masked_heatmap = self.model.predict(np.expand_dims(img, axis=0))
-        all_peaks = self._get_peaks(masked_heatmap)
-        connection_all, special_k = self._get_connections(paf[0], all_peaks)
+        if gauss_sigma:
+            mean_hm = self._tf_gauss_filter(mean_hm, gauss_sigma)
+
+        all_peaks = self._get_peaks(mean_hm)
+        connection_all, special_k = self._get_connections(mean_paf[0], all_peaks)
         subset, candidate = self._get_subset(all_peaks, special_k, connection_all)
         return all_peaks, subset, candidate
+
+    @staticmethod
+    def _get_gaussian_kernel(sigma=3):
+        mean = 0
+        size = sigma * 3
+        d = tfb.distributions.Normal(mean, sigma)
+        vals = d.prob(tf.range(start=-size, limit=size + 1, dtype=tf.float32))
+        gauss_kernel = tf.einsum('i,j->ij', vals, vals)
+        return gauss_kernel
+
+    def _tf_gauss_filter(self, mean_hm, sigma):
+        gaussian_kernel = self._get_gaussian_kernel(sigma)
+        depth_wise_gaussian_kernel = tf.expand_dims(
+            tf.transpose(tf.keras.backend.repeat(gaussian_kernel, 26), perm=(0, 2, 1)), axis=-1)
+        hm = tf.nn.depthwise_conv2d(np.expand_dims(mean_hm.astype('float32'), axis=0),
+                                    depth_wise_gaussian_kernel,
+                                    [1, 1, 1, 1],
+                                    'SAME')[0]
+        return hm
 
     def _get_peaks(self, masked_heatmap):
         t = time()
@@ -443,22 +489,24 @@ class FastOpenPoseV2Model:
     """
 
     def __init__(self,
-                 config,
-                 input_h=None,
-                 input_w=None):
+                 config):
         self.weights_path = config.weights_path
 
-        if input_h is None and input_w is None:
-            self.input_h = config.input_res
-            self.input_w = config.input_res
-            self.input_res = config.input_res
-        else:
-            self.input_w = input_w
-            self.input_h = input_h
-            if input_h == input_w:
-                self.input_res = input_h
-            else:
-                self.input_res = None
+        # if input_h is None and input_w is None:
+        #     self.input_h = config.input_res
+        #     self.input_w = config.input_res
+        #     self.input_res = config.input_res
+        # else:
+        #     self.input_w = input_w
+        #     self.input_h = input_h
+        #     if input_h == input_w:
+        #         self.input_res = input_h
+        #     else:
+        #         self.input_res = None
+        self.input_h = config.input_res
+        self.input_w = config.input_res
+        self.input_res = config.input_res
+
         self.use_gaussian_filtering = config.use_gaussian_filtering
         self.gaussian_kernel_sigma = config.gaussian_kernel_sigma
         self.resize_method = config.resize_method
