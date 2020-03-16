@@ -70,7 +70,7 @@ class AIDA:
         fps = vidcap.get(cv2.CAP_PROP_FPS)
         fc = vidcap.get(cv2.CAP_PROP_FRAME_COUNT)
         if n_frames is None:
-            n_frames = fc
+            n_frames = int(fc)
 
         fourcc = cv2.VideoWriter_fourcc(*'MP4V')
         outvid_path = os.path.join(out_dir, 'out.mp4')
@@ -85,6 +85,10 @@ class AIDA:
                 assert ret, 'Debia!'
 
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                if not np.any(frame):
+                    tracker.update(list())
+                    pbar.update(1)
+                    continue
                 detections = self.openpose.get_detections(frame)
                 tracker.update(detections)
                 if not np.any(detections):
@@ -103,7 +107,7 @@ class AIDA:
                     if det_id == leader_id:
                         target_features = None
                     else:
-                        target_features = [det.pose_features for det in detections if det.id == leader_id][0]
+                        target_features = [det.pose_features for det in detections if det.id == det_id][0]
                     drawed = self.openpose.draw_detection(drawed,
                                                           detection,
                                                           draw_kps=draw_kps,
