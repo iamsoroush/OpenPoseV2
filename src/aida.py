@@ -109,12 +109,13 @@ class AIDA:
                         my_list = [det.pose_features for det in detections if det.id == leader_id]
                         if my_list:
                             target_features = my_list[0]
-                    drawed = self.openpose.draw_detection(drawed,
-                                                          detection,
-                                                          draw_kps=draw_kps,
-                                                          draw_limbs=draw_limbs,
-                                                          draw_bbox=draw_bbox,
-                                                          target_features=target_features)
+                    detection.update_pose_error(target_features)
+                    # drawed = self.openpose.draw_detection(drawed,
+                    #                                       detection,
+                    #                                       draw_kps=draw_kps,
+                    #                                       draw_limbs=draw_limbs,
+                    #                                       draw_bbox=draw_bbox,
+                    #                                       target_features=target_features)
 
                 outvid.write(cv2.cvtColor(drawed, cv2.COLOR_RGB2BGR))
                 pbar.update(1)
