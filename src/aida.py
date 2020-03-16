@@ -104,12 +104,11 @@ class AIDA:
                         p = Track(det_id)
                         p.update(detection, i + 1)
                         tracks[det_id] = p
-                    if det_id == leader_id:
-                        target_features = None
-                    else:
+                    target_features = None
+                    if not det_id == leader_id:
                         my_list = [det.pose_features for det in detections if det.id == leader_id]
                         if my_list:
-                            target_features = [0]
+                            target_features = my_list[0]
                     drawed = self.openpose.draw_detection(drawed,
                                                           detection,
                                                           draw_kps=draw_kps,
