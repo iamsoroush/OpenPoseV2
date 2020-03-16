@@ -266,6 +266,7 @@ class InterMediateOpenPose:
                  hyper_config,
                  verbose):
         self.hyper_config = hyper_config
+        self.model_config = model_config
         self.openpose_model = FastOpenPoseV2Model(model_config)
         self.input_res = model_config.input_res
 
@@ -294,8 +295,6 @@ class InterMediateOpenPose:
     def multi_scale_inference(self, img, gauss_sigma):
         """Multi-scale inference on given image, based on self.scales ."""
 
-        # TODO: complete this
-
         h, w = img.shape[:2]
 
         n_hm = 26
@@ -309,11 +308,13 @@ class InterMediateOpenPose:
             hm, paf = self.openpose_model.base_model.predict(np.expand_dims(scaled_img, axis=0))
             heatmaps[i] = cv2.resize(hm[0], dsize=None, fx=1 / scale, fy=1 / scale, interpolation=cv2.INTER_CUBIC)
             pafs[i] = cv2.resize(paf[0], dsize=None, fx=1 / scale, fy=1 / scale, interpolation=cv2.INTER_CUBIC)
-        mean_hm = np.mean(heatmaps, axis=0)
-        mean_paf = np.mean(pafs, axis=0)
+        mean_hm = np.expand_dims(np.mean(heatmaps, axis=0), axis=0)
+        mean_paf = np.expand_dims(np.mean(pafs, axis=0), axis=0)
 
         if gauss_sigma:
             mean_hm = self._tf_gauss_filter(mean_hm, gauss_sigma)
+
+        mean_hm = self._get_masked_hm(mean_hm, h, w)
 
         all_peaks = self._get_peaks(mean_hm)
         connection_all, special_k = self._get_connections(mean_paf[0], all_peaks)
@@ -333,11 +334,30 @@ class InterMediateOpenPose:
         gaussian_kernel = self._get_gaussian_kernel(sigma)
         depth_wise_gaussian_kernel = tf.expand_dims(
             tf.transpose(tf.keras.backend.repeat(gaussian_kernel, 26), perm=(0, 2, 1)), axis=-1)
-        hm = tf.nn.depthwise_conv2d(np.expand_dims(mean_hm.astype('float32'), axis=0),
+        hm = tf.nn.depthwise_conv2d(mean_hm.astype('float32'),
                                     depth_wise_gaussian_kernel,
                                     [1, 1, 1, 1],
-                                    'SAME')[0]
+                                    'SAME')
         return hm
+
+    def _get_masked_hm(self, mean_hm, h, w):
+        paddings = tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]])
+        padded = tf.pad(mean_hm, paddings)
+
+        slice1 = tf.slice(padded, [0, 0, 1, 0], [-1, h, w, -1])
+        slice2 = tf.slice(padded, [0, 2, 1, 0], [-1, h, w, -1])
+        slice3 = tf.slice(padded, [0, 1, 0, 0], [-1, h, w, -1])
+        slice4 = tf.slice(padded, [0, 1, 2, 0], [-1, h, w, -1])
+
+        stacked = tf.stack([mean_hm >= slice1,
+                            mean_hm >= slice2,
+                            mean_hm >= slice3,
+                            mean_hm >= slice4,
+                            mean_hm >= self.model_config.joint_threshold], axis=-1)
+        binary_hm = tf.reduce_all(stacked, axis=-1)
+
+        masked_hm = tf.multiply(tf.cast(binary_hm, 'float'), mean_hm)
+        return masked_hm
 
     def _get_peaks(self, masked_heatmap):
         t = time()
