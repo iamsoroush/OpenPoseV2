@@ -86,7 +86,7 @@ class AIDA:
 
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 if not np.any(frame):
-                    tracker.update(list())
+                    # tracker.update(list())
                     pbar.update(1)
                     continue
                 detections = self.openpose.get_detections(frame)
@@ -107,7 +107,7 @@ class AIDA:
                     if det_id == leader_id:
                         target_features = None
                     else:
-                        target_features = [det.pose_features for det in detections if det.id == det_id][0]
+                        target_features = [det.pose_features for det in detections if det.id == leader_id][0]
                     drawed = self.openpose.draw_detection(drawed,
                                                           detection,
                                                           draw_kps=draw_kps,
