@@ -45,6 +45,8 @@ class Detection:
                        [255, 170, 85], [255, 170, 170], [255, 170, 255],
                        [255, 85, 85], [255, 85, 170], [255, 85, 255],
                        [170, 170, 170]]
+        random_colors = np.random.randint(0, 255, (50, 3)).tolist()
+        self.colors.extend(random_colors)
         self.pose_feature_combs = pose_feature_combs
 
         self.pose_error = None
