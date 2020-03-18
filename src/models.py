@@ -52,7 +52,6 @@ class OpenPoseV2:
 
         self.use_gpu = hyper_config.use_gpu
         self.gpu_device_number = hyper_config.gpu_device_number
-        self.scale_search = hyper_config.scale_search
         self.pad_value = hyper_config.pad_value
         self.scales = hyper_config.scales
 
@@ -182,7 +181,7 @@ class OpenPoseV2:
 
     def _get_bbox(self, kps, org_w, org_h):
         x_min, y_min, x_max, y_max = self._get_ul_lr(kps)
-        diag = np.sqrt((x_min - x_max) ** 2 + (y_min - y_max) ** 2)
+        diag = np.sqrt(np.square(x_min - x_max) + np.square(y_min - y_max))
         pad = diag // 10
 
         x_min = int(max(0, x_min - pad))
@@ -193,7 +192,8 @@ class OpenPoseV2:
 
     @staticmethod
     def _get_ul_lr(kps):
-        not_none_kps = np.array([kp for kp in kps if kp is not None])
+        # not_none_kps = np.array([kp for kp in kps if kp is not None])
+        not_none_kps = kps[np.all(~np.isnan(kps), axis=1)]
 
         x_max_ind, y_max_ind = np.argmax(not_none_kps, axis=0)
         x_max = not_none_kps[x_max_ind, 0]
@@ -248,13 +248,13 @@ class OpenPoseV2:
         Returns an array of shape(self.n_joints, 2) with hidden joints of np.nan values.
         """
 
-        kps = np.zeros((self.n_joints, 2), dtype=np.int)
+        kps = np.zeros((self.n_joints, 2))
         kps[:] = np.nan
         joint_confidences = list()
         for i in range(self.n_joints):
             kp_ind = person_subset[i].astype(np.int)
             if not kp_ind == -1:
-                kps[i] = candidate_arr[kp_ind, 0: 2].astype(np.int)
+                kps[i] = candidate_arr[kp_ind, 0: 2]
                 joint_confidences.append(candidate_arr[kp_ind, 2])
         return kps, np.mean(joint_confidences)
 
@@ -277,7 +277,6 @@ class InterMediateOpenPose:
 
         self.use_gpu = hyper_config.use_gpu
         self.gpu_device_number = hyper_config.gpu_device_number
-        self.scale_search = hyper_config.scale_search
         self.pad_value = hyper_config.pad_value
         self.scales = hyper_config.scales
 
@@ -490,7 +489,7 @@ class InterMediateOpenPose:
         # delete some rows of subset which has few parts occur
         delete_idx = []
         for i in range(len(subset)):
-            if subset[i][-1] < 8 or subset[i][-2] / subset[i][-1] < 0.4:
+            if subset[i][-1] < self.model_config.min_vis_parts or subset[i][-2] / subset[i][-1] < 0.4:
                 delete_idx.append(i)
         subset = np.delete(subset, delete_idx, axis=0)
         if self.verbose:
