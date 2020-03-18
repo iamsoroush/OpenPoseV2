@@ -110,10 +110,16 @@ class FeatureExtractor:
             c = keypoints[comb[2]]
 
             feature = None
-            if (a is not None) and (b is not None) and (c is not None):
-                feature = self._compute_angle(np.array(a),
-                                              np.array(b),
-                                              np.array(c))
+            if isinstance(keypoints, np.ndarray):
+                if not (np.any(np.isnan(a)) and np.any(np.isnan(b)) and np.any(np.isnan(c))):
+                    feature = self._compute_angle(a,
+                                                  b,
+                                                  c)
+            else:
+                if (a is not None) and (b is not None) and (c is not None):
+                    feature = self._compute_angle(np.array(a),
+                                                  np.array(b),
+                                                  np.array(c))
             features.append(feature)
         return np.array(features)
 
@@ -228,8 +234,12 @@ class Drawer:
 
     def draw_kps(self, img, kps):
         for i, kp in enumerate(kps):
-            if kp is not None:
-                cv2.circle(img, (int(kp[0]), int(kp[1])), self.stick, self.colors[i], thickness=-1)
+            if isinstance(kp, np.ndarray):
+                if not np.any(np.isnan(kp)):
+                    cv2.circle(img, (int(kp[0]), int(kp[1])), self.stick, self.colors[i], thickness=-1)
+            else:
+                if kp is not None:
+                    cv2.circle(img, (int(kp[0]), int(kp[1])), self.stick, self.colors[i], thickness=-1)
 
     def draw_connections(self, img, person, transformed_candidate):
         for i in range(self.n_limbs):
