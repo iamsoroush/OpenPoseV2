@@ -7,6 +7,7 @@ class OpenPoseV2Config:
     def __init__(self):
         self.joint_threshold = 0.1
         self.connection_threshold = 0.05
+        self.min_vis_parts = 8
         self.resize_method = 'bicubic'
         project_root = normpath(abspath(dirname(dirname(realpath(__file__)))))
         self.weights_path = join(project_root, 'models', 'openpose_v2', 'openpose_body25_keras.h5')
@@ -20,7 +21,6 @@ class HyperConfig:
     def __init__(self):
         self.use_gpu = True
         self.gpu_device_number = 0
-        self.scale_search = (0.8, 1.0, 1.2)
         self.pad_value = 128
         self.drawing_stick = 10
         self.scales = (0.8, 1.0, 1.2)
