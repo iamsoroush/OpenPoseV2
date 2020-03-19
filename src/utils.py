@@ -10,9 +10,10 @@ class Track:
 
     :param detections: dict('frame_indx': Detection)"""
 
-    def __init__(self, p_id):
+    def __init__(self, p_id, thumbnail=None):
         self.id = p_id
         self.detections = dict()
+        self.thumbnail = thumbnail
 
     def update(self, detection, frame_indx):
         assert isinstance(detection, Detection), 'detection must be an object of Detection class.'
