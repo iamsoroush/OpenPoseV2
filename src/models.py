@@ -58,6 +58,7 @@ class OpenPoseV2:
         self.verbose = verbose
 
     def get_detections(self, img, multi_scale=False):
+
         """Returns a list of Detection objects, each one for a seperate detected pose.
 
         :param multi_scale: to use multi-scale inference or not.
@@ -596,6 +597,7 @@ class OpenPoseModelV2:
                  np_cm=26,
                  resize_method='bicubic',
                  return_vgg=False):
+
         """OpenPose model definition proposed in arXiv:1812.08008v2
 
         :param input_shape: (height, width, n_channels)
