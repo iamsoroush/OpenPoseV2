@@ -28,8 +28,8 @@ class PostProcessor:
 
         self.fe_config = FeatureExtractorConfig()
         self.fps = fps
-        self.overlap = int(self.fps * overlap)
-        self.window_len = int(self.fps * window_len)
+        self.overlap = self.fps * overlap
+        self.window_len = self.fps * window_len
         self.moving_average_len = moving_average_len
 
     def get_person_errors(self, person):
@@ -86,8 +86,8 @@ class PostProcessor:
         t_steps = int(errors_df.shape[0])
         epoched_errors = list()
         index = list()
-        for i, start_ind in enumerate(range(0, t_steps, self.overlap)):
-            end_ind = start_ind + self.window_len
+        for i, start_ind in enumerate(range(0, t_steps, int(self.window_len - self.overlap))):
+            end_ind = start_ind + int(self.window_len)
             if end_ind >= t_steps:
                 break
             err = errors_df.iloc[start_ind: end_ind]
