@@ -21,6 +21,19 @@ class Track:
         detection.id = self.id
 
 
+def add_thumbnail(img, thumbnail, scale_factor=0.15):
+    scale = img.shape[0] * scale_factor / thumbnail.shape[0]
+
+    org_h, org_w = np.array(thumbnail.shape[:2])
+    new_w = (org_h * scale).astype(int)
+    new_h = (org_w * scale).astype(int)
+
+    resized = cv2.resize(thumbnail, (new_h, new_w))
+
+    h, w = resized.shape[:2]
+    img[0: h, 0: w, :] = resized
+
+
 class Detection:
 
     def __init__(self,
@@ -239,10 +252,17 @@ class Drawer:
         for i, kp in enumerate(kps):
             if isinstance(kp, np.ndarray):
                 if not np.any(np.isnan(kp)):
-                    cv2.circle(img, (int(kp[0]), int(kp[1])), self.stick, self.colors[i], thickness=-1)
+                    color = self.colors[i]
+                    self._draw_kp(img, kp, color)
+                    # cv2.circle(img, (int(kp[0]), int(kp[1])), self.stick, self.colors[i], thickness=-1)
             else:
                 if kp is not None:
-                    cv2.circle(img, (int(kp[0]), int(kp[1])), self.stick, self.colors[i], thickness=-1)
+                    color = self.colors[i]
+                    self._draw_kp(img, kp, color)
+                    # cv2.circle(img, (int(kp[0]), int(kp[1])), self.stick, self.colors[i], thickness=-1)
+
+    def _draw_kp(self, img, kp, color):
+        cv2.circle(img, (int(kp[0]), int(kp[1])), self.stick, color, thickness=-1)
 
     def draw_connections(self, img, person, transformed_candidate):
         for i in range(self.n_limbs):
