@@ -80,7 +80,7 @@ class AIDA:
         tracks = dict()
 
         with tqdm(total=n_frames) as pbar:
-            for i in range(n_frames):
+            for frame_ind in range(n_frames):
                 ret, frame = vidcap.read()
                 assert ret, 'Debia!'
 
@@ -99,10 +99,10 @@ class AIDA:
                 for detection in detections:
                     det_id = detection.id
                     if det_id in p_ids:
-                        tracks[det_id].update(detection, i + 1)
+                        tracks[det_id].update(detection, frame_ind)
                     else:
                         p = Track(det_id)
-                        p.update(detection, i + 1)
+                        p.update(detection, frame_ind)
                         tracks[det_id] = p
                     target_features = None
                     if not det_id == leader_id:
