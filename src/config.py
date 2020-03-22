@@ -22,9 +22,9 @@ class HyperConfig:
         self.use_gpu = True
         self.gpu_device_number = 0
         self.pad_value = 128
-        self.drawing_stick = 10
+        self.drawing_stick = 5
         self.scales = (0.8, 1.0, 1.2)
-        self.error_th = 10  # in degrees
+        self.error_th = 20  # in degrees
         self.kp_names = ["Nose",
                          "Neck",
                          "RShoulder",
