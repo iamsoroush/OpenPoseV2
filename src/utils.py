@@ -137,7 +137,8 @@ class FeatureExtractor:
                                                   np.array(b),
                                                   np.array(c))
             features.append(feature)
-        return np.array(features)
+        # return np.array(features)
+        return features
 
     def _compute_angle(self, a, b, c):
         """Computes angle on point 'b'."""
@@ -197,26 +198,32 @@ class Drawer:
         max_radius = detection.bbox.diag_len / 6
 
         for i, feature_error in enumerate(errors):
-            if feature_error is not None:
-                if np.abs(feature_error) >= self.error_th:
-                    kp_2 = kps[self.feature_extractor.points_comb[i][1]]
-                    kp_3 = kps[self.feature_extractor.points_comb[i][2]]
-                    radius = int(max_radius * np.abs(feature_error) / 360)
-                    # radius = int(max_radius)
-                    if radius < 1:
-                        continue
-                    helper_point = [kp_2[0] + 1, kp_2[1]]
+            # if feature_error is not None:
+            if isinstance(errors, np.ndarray):
+                if np.isnan(feature_error):
+                    continue
+            else:
+                if feature_error is None:
+                    continue
+            if np.abs(feature_error) >= self.error_th:
+                kp_2 = kps[self.feature_extractor.points_comb[i][1]]
+                kp_3 = kps[self.feature_extractor.points_comb[i][2]]
+                radius = int(max_radius * np.abs(feature_error) / 360)
+                # radius = int(max_radius)
+                if radius < 1:
+                    continue
+                helper_point = [kp_2[0] + 1, kp_2[1]]
 
-                    if feature_error > 0:
-                        start_angle = self.feature_extractor._compute_angle(helper_point, kp_2, kp_3)
-                        end_angle = start_angle + feature_error
-                    else:
-                        end_angle = self.feature_extractor._compute_angle(helper_point, kp_2, kp_3)
-                        start_angle = end_angle + feature_error
+                if feature_error > 0:
+                    start_angle = self.feature_extractor._compute_angle(helper_point, kp_2, kp_3)
+                    end_angle = start_angle + feature_error
+                else:
+                    end_angle = self.feature_extractor._compute_angle(helper_point, kp_2, kp_3)
+                    start_angle = end_angle + feature_error
 
-                    # start_angle = self.fe._compute_angle(helper_point, kp_2, kp_3)
-                    # end_angle = self.fe._compute_angle(helper_point, kp_2, kp_1)
-                    img = self._draw_arc(img, kp_2, radius, end_angle, start_angle, self.error_color)
+                # start_angle = self.fe._compute_angle(helper_point, kp_2, kp_3)
+                # end_angle = self.fe._compute_angle(helper_point, kp_2, kp_1)
+                img = self._draw_arc(img, kp_2, radius, end_angle, start_angle, self.error_color)
         return img
 
     @staticmethod
