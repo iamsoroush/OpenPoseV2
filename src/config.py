@@ -16,6 +16,16 @@ class OpenPoseV2Config:
         self.gaussian_kernel_sigma = 3
 
 
+class PoseCorrectionConfig:
+
+    def __init__(self):
+        project_root = normpath(abspath(dirname(dirname(realpath(__file__)))))
+        pose_predictor_dir = join(project_root, 'models', 'pose_correction')
+        self.weights_path = join(pose_predictor_dir, 'weights_2020-04-11_17:58:54.json')
+        self.model_path = join(pose_predictor_dir, 'model_2020-04-11_17:58:54.h5')
+        self.config_path = join(pose_predictor_dir, 'config_2020-04-11_17:58:54.json')
+
+
 class HyperConfig:
 
     def __init__(self):
