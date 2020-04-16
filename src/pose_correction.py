@@ -25,14 +25,59 @@ class PosePredictor:
         return config
 
     def _define_model(self, activation, n_hidden_units):
-        encoder_input = tfkl.Input(shape=(None, self.n_features), name='encoder_input')
+        encoder_input = tfkl.Input(shape=(None, self.config['n_features']), name='encoder_input')
         whole_sequence_output, final_memory_state, final_carry_state = tfkl.LSTM(n_hidden_units,
                                                                                  return_sequences=True,
                                                                                  return_state=True,
                                                                                  name='encoder_lstm')(encoder_input)
-        output_tensor = tfkl.Dense(self.n_features, activation=activation, name='output_tensor')(whole_sequence_output)
+        output_tensor = tfkl.Dense(self.config['n_features'], activation=activation, name='output_tensor')(whole_sequence_output)
         model = tfk.Model(encoder_input, output_tensor)
         return model
+
+
+class PoseCorrector:
+
+    def __init__(self, max_error_radius, correction_field):
+        self.max_error_radius = max_error_radius
+        self.correction_field = correction_field
+
+    def correct_pose(self, track_kps, bboxes, pp_preprocessor, pp_model, detection):
+
+        """Corrects detection object based on given arguments.
+
+        :argument track_kps: array of shape(seq_len, n_kps, 2)
+        :argument bboxes: bounding boxes of shape(seq_len, 4) ==> np.ndarray([[x_min, y_min, x_max, y_max], ...])
+        :argument pp_preprocessor: pose_predictor's preprocessor, instance of PoseCorrectionPreProcessor.
+        :argument pp_model: raw model for pose predictor to be model.predict()ed.
+        :argument detection: current Detection object, which has to be corrected based on given track_kps and bboxes.
+        """
+
+        kps, x_max, y_max, x_min, y_min = pp_preprocessor.normalize(track_kps, bboxes)
+        predicted = pp_model.predict(np.expand_dims(kps, axis=0))[0]
+        actual_predicted = pp_preprocessor.denormalize(predicted[-1], x_max, y_max, x_min, y_min)
+        corrected_pose, to_keep_indxs, valid_dist = self._correct_kps(track_kps[-1], detection.key_points, actual_predicted)
+        # detection.key_points = corrected_pose
+        return corrected_pose, to_keep_indxs, valid_dist
+
+    def _correct_kps(self, latest_kps, current_kps, predicted_kps):
+        mer = self.max_error_radius
+        valid_dist = self._calc_euclidean_dist(latest_kps, predicted_kps)
+        dist = self._calc_euclidean_dist(latest_kps, current_kps)
+
+        to_keep = np.nan_to_num(dist) <= np.nan_to_num(valid_dist) * mer
+        corrected_to_keep = to_keep.copy()
+        corrected_to_keep[np.isnan(dist)] = True
+        corrected_to_keep[np.isnan(valid_dist)] = True
+
+        corrected_pose = current_kps.copy()
+        corrected_pose[~corrected_to_keep] = latest_kps[~corrected_to_keep]
+        return corrected_pose, corrected_to_keep, valid_dist
+
+    @staticmethod
+    def _calc_euclidean_dist(src_kps, dst_kps):
+        assert src_kps.shape == dst_kps.shape
+
+        return np.linalg.norm(src_kps - dst_kps, axis=1)
 
 
 class PoseCorrectionPreProcessor:
@@ -67,7 +112,7 @@ class PoseCorrectionPreProcessor:
 
         """Normalize given kps to (-1, 1) for using as input to posepredictor.
 
-        :argument track_kps: np.ndarray of key-points of shape(n_kps, 2)
+        :argument track_kps: np.ndarray of key-points of shape(seq_len, n_kps, 2)
         :argument track_bboxes: np.ndarray([[x_min, y_min, x_max, y_max], ...])
         """
 
