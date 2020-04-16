@@ -16,7 +16,15 @@ class Track:
         self.thumbnail = thumbnail
 
     def update(self, detection, frame_indx):
+
+        """Update the track with given detection object.
+
+        :argument detection: a Detection object.
+        :argument frame_indx: 0-based frame index
+        """
+
         assert isinstance(detection, Detection), 'detection must be an object of Detection class.'
+
         self.detections[frame_indx] = detection
         detection.id = self.id
 
