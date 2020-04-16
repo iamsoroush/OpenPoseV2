@@ -20,10 +20,24 @@ class PoseCorrectionConfig:
 
     def __init__(self):
         project_root = normpath(abspath(dirname(dirname(realpath(__file__)))))
-        pose_predictor_dir = join(project_root, 'models', 'pose_correction')
-        self.weights_path = join(pose_predictor_dir, 'weights_2020-04-11_17:58:54.json')
-        self.model_path = join(pose_predictor_dir, 'model_2020-04-11_17:58:54.h5')
-        self.config_path = join(pose_predictor_dir, 'config_2020-04-11_17:58:54.json')
+
+        # pose_predictor_dir = join(project_root, 'models', 'pose_correction', 'lstm_mae_exp_linear')
+        # self.weights_path = join(pose_predictor_dir, 'weights_2020-04-11_17:58:54.json')
+        # self.model_path = join(pose_predictor_dir, 'model_2020-04-11_17:58:54.h5')
+        # self.config_path = join(pose_predictor_dir, 'config_2020-04-11_17:58:54.json')
+
+        # pose_predictor_dir = join(project_root, 'models', 'pose_correction', 'lstm_mae_linear_light')
+        # self.weights_path = join(pose_predictor_dir, 'weights_2020-04-14_16:22:20.json')
+        # self.model_path = join(pose_predictor_dir, 'model_2020-04-14_16:22:20.h5')
+        # self.config_path = join(pose_predictor_dir, 'config_2020-04-14_16:22:20.json')
+
+        pose_predictor_dir = join(project_root, 'models', 'pose_correction', 'lstm_mae_linear_dropout')
+        self.weights_path = join(pose_predictor_dir, 'weights_2020-04-14_17:31:37.json')
+        self.model_path = join(pose_predictor_dir, 'model_2020-04-14_17:31:37.h5')
+        self.config_path = join(pose_predictor_dir, 'config_2020-04-14_17:31:37.json')
+
+        self.max_error_radius = 1  # A correct key-point is supposed to be in a filed of :
+        # max_error_radius_* (|predicted_kp, latest_kps|)
 
 
 class HyperConfig:
