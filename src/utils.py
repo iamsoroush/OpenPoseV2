@@ -48,14 +48,14 @@ class Detection:
                  key_points,
                  transformed_candidate,
                  person_subset,
-                 confidence,
+                 confidences,
                  bbox,
                  pose_features,
                  pose_feature_combs):
         self.key_points = key_points
         self.transformed_candidate = transformed_candidate
         self.person_subset = person_subset
-        self.confidence = confidence
+        self.confidences = confidences
         self.bbox = bbox
         self.pose_features = pose_features
         self.colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0],
