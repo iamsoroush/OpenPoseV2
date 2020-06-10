@@ -82,14 +82,14 @@ class OpenPoseV2:
             transformed_candidate = self._inverse_transform_candidate(org_h, org_w, candidate)
 
             for i, person in enumerate(subset):
-                kps, overall_conf = self._extract_keypoints(person, transformed_candidate)
+                kps, confidences = self._extract_keypoints(person, transformed_candidate)
                 x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
                 pose_features = self.fe.generate_features(keypoints=kps)
                 bb = BoundingBox(x_min, x_max, y_min, y_max)
                 p = Detection(kps,
                               transformed_candidate,
                               person,
-                              overall_conf,
+                              confidences,
                               bb,
                               pose_features,
                               self.fe_config.points_comb_str)
@@ -257,7 +257,7 @@ class OpenPoseV2:
             if not kp_ind == -1:
                 kps[i] = candidate_arr[kp_ind, 0: 2]
                 joint_confidences.append(candidate_arr[kp_ind, 2])
-        return kps, np.mean(joint_confidences)
+        return kps, joint_confidences
 
 
 class InterMediateOpenPose:
