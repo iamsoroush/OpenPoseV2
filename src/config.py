@@ -1,6 +1,35 @@
 from os.path import normpath, abspath, join, dirname, realpath
 import numpy as np
 
+from . import PROJECT_ROOT
+
+KP_NAMES = ["Nose",
+            "Neck",
+            "RShoulder",
+            "RElbow",
+            "RWrist",
+            "LShoulder",
+            "LElbow",
+            "LWrist",
+            "MidHip",
+            "RHip",
+            "RKnee",
+            "RAnkle",
+            "LHip",
+            "LKnee",
+            "LAnkle",
+            "REye",
+            "LEye",
+            "REar",
+            "LEar",
+            "LBigToe",
+            "LSmallToe",
+            "LHeel",
+            "RBigToe",
+            "RSmallToe",
+            "RHeel",
+            "Background"]
+
 
 class OpenPoseV2Config:
 
@@ -9,8 +38,7 @@ class OpenPoseV2Config:
         self.connection_threshold = 0.05
         self.min_vis_parts = 8
         self.resize_method = 'bicubic'
-        project_root = normpath(abspath(dirname(dirname(realpath(__file__)))))
-        self.weights_path = join(project_root, 'models', 'openpose_v2', 'openpose_body25_keras.h5')
+        self.weights_path = join(PROJECT_ROOT, 'models', 'openpose_v2', 'openpose_body25_keras.h5')
         self.input_res = 368
         self.use_gaussian_filtering = True
         self.gaussian_kernel_sigma = 3
@@ -19,8 +47,6 @@ class OpenPoseV2Config:
 class PoseCorrectionConfig:
 
     def __init__(self):
-        project_root = normpath(abspath(dirname(dirname(realpath(__file__)))))
-
         # pose_predictor_dir = join(project_root, 'models', 'pose_correction', 'lstm_mae_exp_linear')
         # self.weights_path = join(pose_predictor_dir, 'weights_2020-04-11_17:58:54.json')
         # self.model_path = join(pose_predictor_dir, 'model_2020-04-11_17:58:54.h5')
@@ -31,7 +57,7 @@ class PoseCorrectionConfig:
         # self.model_path = join(pose_predictor_dir, 'model_2020-04-14_16:22:20.h5')
         # self.config_path = join(pose_predictor_dir, 'config_2020-04-14_16:22:20.json')
 
-        pose_predictor_dir = join(project_root, 'models', 'pose_correction', 'lstm_mae_linear_dropout')
+        pose_predictor_dir = join(PROJECT_ROOT, 'models', 'pose_correction', 'lstm_mae_linear_dropout')
         self.weights_path = join(pose_predictor_dir, 'weights_2020-04-14_17:31:37.json')
         self.model_path = join(pose_predictor_dir, 'model_2020-04-14_17:31:37.h5')
         self.config_path = join(pose_predictor_dir, 'config_2020-04-14_17:31:37.json')
@@ -143,33 +169,8 @@ class HyperConfig:
 class FeatureExtractorConfig:
 
     def __init__(self):
-        self.kp_names = ["Nose",
-                         "Neck",
-                         "RShoulder",
-                         "RElbow",
-                         "RWrist",
-                         "LShoulder",
-                         "LElbow",
-                         "LWrist",
-                         "MidHip",
-                         "RHip",
-                         "RKnee",
-                         "RAnkle",
-                         "LHip",
-                         "LKnee",
-                         "LAnkle",
-                         "REye",
-                         "LEye",
-                         "REar",
-                         "LEar",
-                         "LBigToe",
-                         "LSmallToe",
-                         "LHeel",
-                         "RBigToe",
-                         "RSmallToe",
-                         "RHeel",
-                         "Background"]
-        mapper = dict(zip(self.kp_names, range(len(self.kp_names))))
+
+        mapper = dict(zip(KP_NAMES, range(len(KP_NAMES))))
         # self.points_comb = np.array([[mapper['RShoulder'], mapper['RElbow'], mapper['RWrist']],
         #                              [mapper['LWrist'], mapper['LElbow'], mapper['LShoulder']],
         #                              [mapper['Neck'], mapper['RShoulder'], mapper['RHip']],
