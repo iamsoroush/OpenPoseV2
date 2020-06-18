@@ -280,12 +280,12 @@ class OpenPoseV2:
 
         kps = np.zeros((self.n_joints, 2))
         kps[:] = np.nan
-        joint_confidences = list()
+        joint_confidences = np.zeros(self.n_joints)
         for i in range(self.n_joints):
             kp_ind = person_subset[i].astype(np.int)
             if not kp_ind == -1:
                 kps[i] = candidate_arr[kp_ind, 0: 2]
-                joint_confidences.append(candidate_arr[kp_ind, 2])
+                joint_confidences[i] = candidate_arr[kp_ind, 2]
         return kps, joint_confidences
 
 
