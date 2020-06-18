@@ -1,4 +1,4 @@
-from os.path import normpath, abspath, join, dirname, realpath
+from os.path import join
 import numpy as np
 
 from . import PROJECT_ROOT
