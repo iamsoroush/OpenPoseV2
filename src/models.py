@@ -27,6 +27,7 @@ class OpenPoseV2:
     def __init__(self,
                  model_config,
                  hyper_config,
+                 resize_with_pad=True,
                  verbose=True):
         self.hyper_config = hyper_config
         self.input_res = model_config.input_res
@@ -55,6 +56,7 @@ class OpenPoseV2:
         self.pad_value = hyper_config.pad_value
         self.scales = hyper_config.scales
 
+        self.resize_with_pad = resize_with_pad
         self.verbose = verbose
 
     def get_detections(self, img, multi_scale=False):
@@ -65,7 +67,11 @@ class OpenPoseV2:
         :param img: RGB(0, 255) image.
         """
 
-        resized = self._resize_with_pad(img, self.input_res, self.pad_value)
+        if self.resize_with_pad:
+            resized = self._resize_with_pad(img, self.input_res, self.pad_value)
+
+        else:
+            resized = cv2.resize(img, (self.input_res, self.input_res))
 
         t = time()
         # peaks, subset, candidate = self._inference(resized)
@@ -74,12 +80,16 @@ class OpenPoseV2:
         else:
             peaks, subset, candidate = self.openpose_model.estimate(resized)
         if self.verbose:
-            print('complete inference: ', time() - t)
+            print('_before_post_processing: ', time() - t)
 
         detections = list()
         if subset.any():
             org_h, org_w, _ = img.shape
-            transformed_candidate = self._inverse_transform_candidate(org_h, org_w, candidate)
+
+            if self.resize_with_pad:
+                transformed_candidate = self._inverse_transform_candidate(org_h, org_w, candidate)
+            else:
+                transformed_candidate = self._inverse_transform_candidate_for_unpadded_resize(org_h, org_w, candidate)
 
             for i, person in enumerate(subset):
                 kps, confidences = self._extract_keypoints(person, transformed_candidate)
@@ -94,6 +104,10 @@ class OpenPoseV2:
                               pose_features,
                               self.fe_config.points_comb_str)
                 detections.append(p)
+
+        if self.verbose:
+            print('inference time: ', time() - t)
+
         return detections
 
     def draw_detection(self,
@@ -124,13 +138,15 @@ class OpenPoseV2:
 
         x_min, y_min, x_max, y_max = detection.bbox.data
 
+        overlay = image.copy()
+
         # Draw bbox
         if draw_bbox:
-            cv2.rectangle(image, (x_min, y_min), (x_max, y_max), detection.get_bbox_color(), 2, 5)
+            cv2.rectangle(overlay, (x_min, y_min), (x_max, y_max), detection.get_bbox_color(), 2, 5)
 
         # Draw id
         if draw_id:
-            cv2.putText(image,
+            cv2.putText(overlay,
                         str(detection.id),
                         (x_min + (x_max - x_min) // 3, y_min - 10),
                         cv2.FONT_HERSHEY_SIMPLEX,
@@ -140,18 +156,18 @@ class OpenPoseV2:
 
         # Draw pose landmarks
         if draw_kps:
-            self.drawer.draw_kps(image, detection.key_points)
+            self.drawer.draw_kps(overlay, detection.key_points)
 
         # Draw limbs
         if draw_limbs:
-            image = self.drawer.draw_connections(image, detection.person_subset, detection.transformed_candidate)
+            overlay = self.drawer.draw_connections(overlay, detection.person_subset, detection.transformed_candidate)
 
         # Draw errors
         if target_features is not None:
             detection.update_pose_error(target_features)
             # image = self._draw_pose_feature_errors(image, detection)
-            image = self.drawer.draw_pose_errors(image, detection)
-        return image
+            overlay = self.drawer.draw_pose_errors(overlay, detection)
+        return overlay
 
     @staticmethod
     def _resize_with_pad(img, target_res, pad_value):
@@ -228,6 +244,19 @@ class OpenPoseV2:
                     transformed_candidate[i, 1] = scale_factor * (kp[1] - border)
                     transformed_candidate[i, 2] = candidate[i, 2]
             return transformed_candidate
+
+    def _inverse_transform_candidate_for_unpadded_resize(self, org_h, org_w, candidate):
+        kps = candidate[:, 0: 2].astype(np.int)
+
+        scale_h = org_w / self.input_res
+        scale_w = org_h / self.input_res
+
+        transformed_candidate = np.zeros((candidate.shape[0], 3))
+        for i, kp in enumerate(kps):
+            transformed_candidate[i, 0] = scale_h * kp[0]
+            transformed_candidate[i, 1] = scale_w * kp[1]
+            transformed_candidate[i, 2] = candidate[i, 2]
+        return transformed_candidate
 
     def _inverse_tform_cand_preserve_ar(self, org_h, org_w, candidate):
         kps = candidate[:, 0: 2].astype(np.int)
