@@ -1,6 +1,7 @@
 import os
 import json
 from time import time
+import datetime
 
 import numpy as np
 import cv2
@@ -29,6 +30,87 @@ kp_ordering = ["Nose",
 
 
 openpose_indices_to_select = [KP_NAMES.index(item) for item in kp_ordering]
+
+
+def get_coco_gt_template():
+    kp_names = ["Nose",
+                "Neck",
+                "RShoulder",
+                "RElbow",
+                "RWrist",
+                "LShoulder",
+                "LElbow",
+                "LWrist",
+                "RHip",
+                "RKnee",
+                "RAnkle",
+                "LHip",
+                "LKnee",
+                "LAnkle",
+                "REye",
+                "LEye",
+                "REar",
+                "LEar"]
+
+    skeleton = np.array([[16, 14],
+                         [15, 17],
+                         [0, 1],
+                         [1, 2],
+                         [1, 5],
+                         [1, 8],
+                         [1, 11],
+                         [2, 3],
+                         [5, 6],
+                         [3, 4],
+                         [6, 7],
+                         [8, 9],
+                         [11, 12],
+                         [9, 10],
+                         [12, 13]]) + 1
+    now = datetime.datetime.now()
+
+    license = {"id": 0,
+               "name": 'None',
+               "url": 'None'}
+    info = {"year": now.year,
+            "version": '1.0',
+            "description": 'Hi!',
+            "contributor": 'Soroush',
+            "url": 'None',
+            "date_created": now}
+
+    category = {"supercategory": "person",
+                "id": 1,
+                "name": "person",
+                "keypoints": kp_names,
+                "skeleton": skeleton}
+
+    coco_gt_file = {"info": info,
+                    "images": [],
+                    "annotations": [],
+                    "categories": [category],
+                    "licenses": [license]}
+
+
+# annotation = {"id": 0,
+#               "image_id": 0,
+#               "category_id": 0,
+#               "num_keypoints": len(kps),  # number of labeled keypoints (v>0)
+#               "keypoints": [],  # v=0: not labeled (in which case x=y=0), v=1: labeled but not visible, and v=2: labeled and visible
+#               "segmentation": [],
+#               "area": 256,
+#               "bbox": [120, 100, 50, 60],
+#               "iscrowd": 0}
+#
+# coco_gt_file = {"info": info,
+#                 "images": [image],
+#                 "annotations": [annotation],
+#                 "categories": [category],
+#                 "licenses": [license]}
+
+
+def convert_pred_to_coco():
+    pass
 
 
 def generate_outputs(openpose, video_path, skip=1):
