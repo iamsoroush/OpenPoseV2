@@ -135,7 +135,7 @@ class FeatureExtractor:
 
             feature = None
             if isinstance(keypoints, np.ndarray):
-                if not (np.any(np.isnan(a)) and np.any(np.isnan(b)) and np.any(np.isnan(c))):
+                if not (np.any(np.isnan(a)) or np.any(np.isnan(b)) or np.any(np.isnan(c))):
                     feature = self._compute_angle(a,
                                                   b,
                                                   c)
@@ -149,7 +149,8 @@ class FeatureExtractor:
         return features
 
     def _compute_angle(self, a, b, c):
-        """Computes angle on point 'b'."""
+        """Computes angle on point 'b' from 'a' to 'c' in clockwise direction if the given coordinates are from
+         the image, i.e. 'y' locations are from top-left, else, that is in anti-clockwise direction."""
 
         # a = np.array([p1[0], h - p1[1]])
         # b = np.array([p2[0], h - p2[1]])
