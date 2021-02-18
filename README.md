@@ -1,2 +1,2 @@
-# OpenposeV2
+# OpenPoseV2
 OpenPose Body25 implemented
