@@ -2,7 +2,34 @@ import numpy as np
 from sklearn.utils.linear_assignment_ import linear_assignment
 from filterpy.kalman import KalmanFilter
 
-from .utils import Track
+from .utils import Detection
+
+
+class Track:
+
+    """Base class for tracking trajectories.
+
+    Access to trjectory using self.detections.
+
+    :param detections: dict('frame_indx': Detection)"""
+
+    def __init__(self, p_id, thumbnail=None):
+        self.id = p_id
+        self.detections = dict()
+        self.thumbnail = thumbnail
+
+    def update(self, detection, frame_indx):
+
+        """Update the track with given detection object.
+
+        :argument detection: a Detection object.
+        :argument frame_indx: 0-based frame index
+        """
+
+        assert isinstance(detection, Detection), 'detection must be an object of Detection class.'
+
+        self.detections[frame_indx] = detection
+        detection.id = self.id
 
 
 class KalmanBoxTracker:

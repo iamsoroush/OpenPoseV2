@@ -1,6 +1,4 @@
-# from configobj import ConfigObj
 from time import time
-import os
 
 import numpy as np
 
@@ -11,23 +9,25 @@ import tensorflow.keras.layers as tfkl
 
 import cv2
 
-from .utils import FeatureExtractor, Detection, BoundingBox, Drawer
-from .config import FeatureExtractorConfig
+from .utils import Detection, BoundingBox, Drawer
 
 
 class OpenPoseV2:
 
     """OpenPose body_25 version.
 
-    Given a RGB(0, 255) image, model resize-pads it to (model_config.input_res, model_config.input_res),
-     and makes inference on it.
-    Note that the resize function is based on tensorflow's resize_and_pad with pad values of hyper_config.pad_value.
+    :get_detections
+            Given a RGB(0, 255) image, model resize-pads it to (model_config.input_res, model_config.input_res),
+         and makes inference on it, then re-maps the detections to original size and returns the detections as a
+         list of Detection objects
+
+    Note that the resize function is based on tensorflow's resize_and_pad with pad values = hyper_config.pad_value.
     """
 
     def __init__(self,
                  model_config,
                  hyper_config,
-                 resize_with_pad=True,
+                 do_pad_resizing=False,
                  verbose=True):
         self.hyper_config = hyper_config
         self.input_res = model_config.input_res
@@ -37,15 +37,11 @@ class OpenPoseV2:
         # self.openpose_model = FastOpenPoseV2Model(model_config)
         # self.model = self.openpose_model.get_model()
 
-        self.fe_config = FeatureExtractorConfig()
-        self.fe = FeatureExtractor(self.fe_config.points_comb)
-
         self.n_joints = len(hyper_config.kp_mapper) - 1
         self.n_limbs = len(hyper_config.connections)
 
         self.drawing_stick = hyper_config.drawing_stick
-        self.drawer = Drawer(feature_extractor=self.fe,
-                             colors=self.hyper_config.colors,
+        self.drawer = Drawer(colors=self.hyper_config.colors,
                              n_limbs=self.n_limbs,
                              connections=self.hyper_config.connections,
                              stick=self.drawing_stick,
@@ -56,25 +52,24 @@ class OpenPoseV2:
         self.pad_value = hyper_config.pad_value
         self.scales = hyper_config.scales
 
-        self.resize_with_pad = resize_with_pad
+        self.do_pad_resizing = do_pad_resizing
         self.verbose = verbose
 
     def get_detections(self, img, multi_scale=False):
 
-        """Returns a list of Detection objects, each one for a seperate detected pose.
+        """Returns a list of Detection objects, each one for a detected human.
 
-        :param multi_scale: to use multi-scale inference or not.
+        :param multi_scale: to use multi-scale inference.
         :param img: RGB(0, 255) image.
         """
 
-        if self.resize_with_pad:
+        if self.do_pad_resizing:
             resized = self._resize_with_pad(img, self.input_res, self.pad_value)
 
         else:
             resized = cv2.resize(img, (self.input_res, self.input_res))
 
         t = time()
-        # peaks, subset, candidate = self._inference(resized)
         if multi_scale:
             peaks, subset, candidate = self.openpose_model.multi_scale_inference(resized, 3)
         else:
@@ -86,7 +81,7 @@ class OpenPoseV2:
         if subset.any():
             org_h, org_w, _ = img.shape
 
-            if self.resize_with_pad:
+            if self.do_pad_resizing:
                 transformed_candidate = self._inverse_transform_candidate(org_h, org_w, candidate)
             else:
                 transformed_candidate = self._inverse_transform_candidate_for_unpadded_resize(org_h, org_w, candidate)
@@ -94,15 +89,12 @@ class OpenPoseV2:
             for i, person in enumerate(subset):
                 kps, confidences = self._extract_keypoints(person, transformed_candidate)
                 x_min, x_max, y_min, y_max = self._get_bbox(kps, org_w, org_h)
-                pose_features = self.fe.generate_features(keypoints=kps)
                 bb = BoundingBox(x_min, x_max, y_min, y_max)
                 p = Detection(kps,
                               transformed_candidate,
                               person,
                               confidences,
-                              bb,
-                              pose_features,
-                              self.fe_config.points_comb_str)
+                              bb)
                 detections.append(p)
 
         if self.verbose:
@@ -116,10 +108,9 @@ class OpenPoseV2:
                        draw_bbox=True,
                        draw_id=True,
                        draw_kps=True,
-                       draw_limbs=True,
-                       target_features=None):
+                       draw_limbs=True):
 
-        """Draw ket-points, limbs, bounding boxes and ids on image.
+        """Draw key-points, limbs, bounding boxes and ids on image.
 
             Use as follows:
                 >> detections = openpose.get_detections(img)
@@ -133,7 +124,6 @@ class OpenPoseV2:
             :arg draw_id: draw detection id or not.
             :arg draw_kps: draw body joints or not.
             :arg draw_limbs: draw body limbs or not.
-            :arg target_features: if passed, will compare detection with these features and draw the errors.
         """
 
         x_min, y_min, x_max, y_max = detection.bbox.data
@@ -162,11 +152,6 @@ class OpenPoseV2:
         if draw_limbs:
             overlay = self.drawer.draw_connections(overlay, detection.person_subset, detection.transformed_candidate)
 
-        # Draw errors
-        if target_features is not None:
-            detection.update_pose_error(target_features)
-            # image = self._draw_pose_feature_errors(image, detection)
-            overlay = self.drawer.draw_pose_errors(overlay, detection)
         return overlay
 
     @staticmethod
@@ -262,7 +247,7 @@ class OpenPoseV2:
         kps = candidate[:, 0: 2].astype(np.int)
 
         scale_h = org_h / self.input_res
-        scale_w = org_w / self.input_w
+        scale_w = org_w / self.input_res
 
         transformed_candidate = np.zeros((candidate.shape[0], 3))
         for i, kp in enumerate(kps):
@@ -772,65 +757,3 @@ class OpenPoseModelV2:
     def _pooling(x, ks, st, name):
         x = tfkl.MaxPooling2D((ks, ks), strides=(st, st), name=name)(x)
         return x
-
-
-class KerasModel:
-
-    def __init__(self,
-                 model_name,
-                 models_dir,
-                 logs_dir):
-        self.model_name = model_name
-
-        self.models_dir = models_dir
-        if not os.path.exists(models_dir):
-            os.mkdir(models_dir)
-
-        self.model_dir = os.path.join(models_dir, model_name)
-        if not os.path.exists(self.model_dir):
-            os.mkdir(self.model_dir)
-
-        self.logs_dir = logs_dir
-        if not os.path.exists(self.logs_dir):
-            os.mkdir(self.logs_dir)
-
-        self.model_log_dir = os.path.join(logs_dir, model_name)
-        if not os.path.exists(self.model_log_dir):
-            os.mkdir(self.model_log_dir)
-
-
-class PersonReIDBranch(KerasModel):
-
-    def __init__(self,
-                 model_name,
-                 models_dir,
-                 logs_dir,
-                 vgg_base_path):
-
-        """:arg vgg_base_path: path to pre-trained vgg's .h5 file"""
-
-        super(PersonReIDBranch, self).__init__(model_name, models_dir, logs_dir)
-        self.vgg_base_path = vgg_base_path
-
-    def get_model(self):
-        vgg_base = tfk.models.load_model(self.vgg_base_path)
-        vgg_base.trainable = False
-        prid_head = self._create_head()
-
-        input_tensor = tfkl.Input(shape=(None, None, 3))
-        vgg_out = vgg_base(input_tensor)
-        prid_out = prid_head(vgg_out)
-        prid_model = tfk.Model(input_tensor, prid_out)
-        return prid_model
-
-    @staticmethod
-    def _create_head():
-        prid_input = tfkl.Input(shape=(None, None, 128), name='prid_input')
-        x = tfkl.Conv2D(128, (3, 3), padding='valid', use_bias=False, name='prid_conv1')(prid_input)
-        x = tfkl.PReLU(shared_axes=[1, 2], name='prid_prelu1')(x)
-        x = tfkl.MaxPooling2D((2, 2), strides=(2, 2), name='prid_pooling')(x)
-        x = tfkl.Conv2D(128, (3, 3), padding='valid', use_bias=False, name='prid_conv2')(x)
-        x = tfkl.PReLU(shared_axes=[1, 2], name='prid_prelu2')(x)
-        prid_out = tfkl.GlobalAveragePooling2D(name='prid_out')(x)
-        prid_head = tfk.Model(prid_input, prid_out)
-        return prid_head
