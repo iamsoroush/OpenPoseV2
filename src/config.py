@@ -47,7 +47,7 @@ class OpenPoseV2Config:
         self.connection_threshold = 0.05
         self.min_vis_parts = 4
         self.resize_method = 'bicubic'
-        self.weights_path = join(PROJECT_ROOT, 'model', MODEL_NAME)
+        self.weights_path = join(PROJECT_ROOT, 'src', 'model', MODEL_NAME)
         self.input_res = 368
         self.use_gaussian_filtering = True
         self.gaussian_kernel_sigma = 3
