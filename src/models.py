@@ -44,8 +44,7 @@ class OpenPoseV2:
         self.drawer = Drawer(colors=self.hyper_config.colors,
                              n_limbs=self.n_limbs,
                              connections=self.hyper_config.connections,
-                             stick=self.drawing_stick,
-                             error_th=self.hyper_config.error_th)
+                             stick=self.drawing_stick)
 
         self.use_gpu = hyper_config.use_gpu
         self.gpu_device_number = hyper_config.gpu_device_number

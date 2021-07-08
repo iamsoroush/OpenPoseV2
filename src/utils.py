@@ -66,9 +66,7 @@ class Drawer:
                  colors,
                  n_limbs,
                  connections,
-                 stick,
-                 error_th,
-                 error_color=(255, 0, 0)):
+                 stick):
 
         """Give colors and connections from hyper_config."""
 
