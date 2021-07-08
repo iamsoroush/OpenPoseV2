@@ -74,8 +74,6 @@ class Drawer:
         self.n_limbs = n_limbs
         self.connections = connections
         self.stick = stick
-        self.error_th = error_th
-        self.error_color = error_color
 
     def draw_kps(self, img, kps):
         for i, kp in enumerate(kps):
@@ -131,18 +129,17 @@ class Downloader:
 
     def __init__(self):
         self.chunk_size = 32768
+        self.url = "https://docs.google.com/uc?export=download"
 
     def download_file_from_google_drive(self, file_id, destination):
-        URL = "https://docs.google.com/uc?export=download"
-
         session = requests.Session()
 
-        response = session.get(URL, params={'id': file_id}, stream=True)
+        response = session.get(self.url, params={'id': file_id}, stream=True)
         token = self.get_confirm_token(response)
 
         if token:
             params = {'id': file_id, 'confirm': token}
-            response = session.get(URL, params=params, stream=True)
+            response = session.get(self.url, params=params, stream=True)
 
         self.save_response_content(response, destination)
 
@@ -150,7 +147,7 @@ class Downloader:
 
         with open(destination, "wb") as f:
             for chunk in response.iter_content(self.chunk_size):
-                if chunk: # filter out keep-alive new chunks
+                if chunk:  # filter out keep-alive new chunks
                     f.write(chunk)
 
     @staticmethod
