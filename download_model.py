@@ -14,5 +14,5 @@ if __name__ == '__main__':
     model_path = os.path.join(model_dir, MODEL_NAME)
 
     d = Downloader()
-    d.download_file_from_google_drive(FILE_ID, "openpose_body25_keras.h5")
+    d.download_file_from_google_drive(FILE_ID, model_path)
     print("Model downloaded")
