@@ -15,3 +15,6 @@ Here's the original implementation of **OpenPose**. This repo is based on this p
 
 # Demo
 Here's a result from **DetecTracker**:
+![alt text][result]
+
+[result]: https://github.com/iamsoroush/OpenPoseV2/blob/master/out.mp4 "DetecTracker Result"
