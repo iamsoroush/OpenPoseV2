@@ -2,7 +2,7 @@
 
 This is a *Tensorflow2/Keras* Implementation of **OpenPose-Body25(V2)**.
 I've converted the weights into a `.h5` file which will be loaded into model's graph that is written using **Tensorflow2/Keras**.
-Also I've included two trackers for person-tracking and integrated it into OpenPose, which can be found as **DetecTracker** class. 
+Also I've included Sort tracker for person-tracking and integrated it into OpenPose, which can be found as **DetecTracker** class. 
 
 
 Here's the [original implementation of **OpenPose**](https://github.com/CMU-Perceptual-Computing-Lab/openpose). This repo is based on [this paper](https://arxiv.org/pdf/1812.08008.pdf).
