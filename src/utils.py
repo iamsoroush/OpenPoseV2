@@ -16,6 +16,7 @@ class Detection:
         self.transformed_candidate = transformed_candidate
         self.person_subset = person_subset
         self.confidences = confidences
+        self.confidence = np.mean(confidences)
         self.bbox = bbox
         self.colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0],
                        [255, 255, 0], [170, 255, 0], [85, 255, 0],
