@@ -16,6 +16,10 @@ Here's the original implementation of **OpenPose**. This repo is based on this p
 # Demo
 Here's a result from **DetecTracker**:
 
-![Alt text](https://github.com/iamsoroush/OpenPoseV2/blob/master/out.mp4)
+<video width="320" height="240" controls>
+  <source src="out.mp4" type="video/mp4">
+</video>
+
+<!-- ![Alt text](https://github.com/iamsoroush/OpenPoseV2/blob/master/out.mp4) -->
 
 <!-- [result]: https://github.com/iamsoroush/OpenPoseV2/blob/master/out.mp4 "DetecTracker Result" -->
