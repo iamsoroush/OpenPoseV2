@@ -42,8 +42,6 @@ for detection in detections:
 
 cv2.imshow(drawed)
 ```
-  
-- 
 
 - Take a look at [this colab notebook](https://github.com/iamsoroush/OpenPoseV2/blob/master/tf_openpose.ipynb) as a quick start for using `DetecTracker`.
 
