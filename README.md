@@ -12,8 +12,40 @@ Here's the [original implementation of **OpenPose**](https://github.com/CMU-Perc
 
 `conda env create -n tf2_openpose -f environment.lock.yml`
 
+- Or install using `requirements.txt`
+
 - Download the model from [here](https://drive.google.com/file/d/1bccsdNB4CsrjRlRVkFjEps_V_G4DMu_J/view?usp=sharing) and move it to `src/model/` or run `python3 download_model.py`
-- Take a look at [this colab notebook](https://github.com/iamsoroush/OpenPoseV2/blob/master/tf_openpose.ipynb) as a quick start.
+
+- Detect and draw poses from a RGB image:
+  
+```
+import cv2
+from src import OpenPoseV2, OpenPoseV2Config, HyperConfig
+
+## Instantiate OpenPoseV2
+openpose_config = OpenPoseV2Config()
+openpose_config.input_res = 512
+hyper_config = HyperConfig()
+hyper_config.drawing_stick = 2
+openpose = OpenPoseV2(openpose_config, hyper_config)
+
+## Load image
+img = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
+
+## Detect
+detections = openpose.get_detections(img)
+
+## Visualize
+drawed = img.copy()
+for detection in detections:
+    openpose.draw_detection(drawed, detection)
+
+cv2.imshow(drawed)
+```
+  
+- 
+
+- Take a look at [this colab notebook](https://github.com/iamsoroush/OpenPoseV2/blob/master/tf_openpose.ipynb) as a quick start for using `DetecTracker`.
 
 # Demo
 Here's a result from **DetecTracker**:
