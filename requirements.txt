@@ -53,7 +53,7 @@ nbconvert @ file:///Users/runner/miniforge3/conda-bld/nbconvert_1605401854594/wo
 nbformat @ file:///home/conda/feedstock_root/build_artifacts/nbformat_1611005694671/work
 nest-asyncio @ file:///home/conda/feedstock_root/build_artifacts/nest-asyncio_1605195931949/work
 notebook @ file:///Users/runner/miniforge3/conda-bld/notebook_1610575341568/work
-numpy==1.19.5
+numpy==1.22.0
 oauthlib==3.1.0
 olefile==0.46
 opencv-python==4.5.1.48
