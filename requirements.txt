@@ -8,7 +8,7 @@ backcall @ file:///home/conda/feedstock_root/build_artifacts/backcall_1592338393
 backports.functools-lru-cache==1.6.1
 bleach @ file:///home/conda/feedstock_root/build_artifacts/bleach_1612213472466/work
 cachetools==4.2.1
-certifi==2021.5.30
+certifi==2022.12.7
 cffi @ file:///Users/runner/miniforge3/conda-bld/cffi_1613414067184/work
 chardet==4.0.0
 cloudpickle==1.6.0
