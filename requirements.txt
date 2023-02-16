@@ -102,7 +102,7 @@ typing-extensions==3.7.4.3
 urllib3==1.26.5
 wcwidth @ file:///home/conda/feedstock_root/build_artifacts/wcwidth_1600965781394/work
 webencodings==0.5.1
-Werkzeug==1.0.1
+Werkzeug==2.2.3
 wrapt==1.12.1
 xlrd @ file:///tmp/build/80754af9/xlrd_1608072521494/work
 zipp @ file:///home/conda/feedstock_root/build_artifacts/zipp_1603668650351/work
