@@ -48,4 +48,4 @@ cv2.imshow(drawed)
 # Demo
 Here's a result from **DetecTracker**:
 
-https://user-images.githubusercontent.com/33500173/124981056-5e589f00-e04a-11eb-868a-713d1a7f5374.mp4
+# https://user-images.githubusercontent.com/33500173/124981056-5e589f00-e04a-11eb-868a-713d1a7f5374.mp4
